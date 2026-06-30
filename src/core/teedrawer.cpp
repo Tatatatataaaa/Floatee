@@ -1,7 +1,6 @@
 #include "teedrawer.h"
 #include <QDebug>
 #include <QFile>
-#include <QTransform>
 #include <QtMath>
 
 // ── Hue shift ──────────────────────────────────────────────────────────
@@ -86,8 +85,8 @@ bool TeeDrawer::load(const QString &skinPath)
         QPixmap eyeLeft = eyeSrc.scaled(kEyeDispW, kEyeDispH,
                                         Qt::KeepAspectRatio,
                                         Qt::SmoothTransformation);
-        QPixmap eyeRight = eyeLeft.transformed(QTransform::fromScale(-1, 1),
-                                               Qt::SmoothTransformation);
+        QPixmap eyeRight = QPixmap::fromImage(
+            eyeLeft.toImage().mirrored(true, false));
 
         QPixmap eyes(kEyesCanvasW, kEyesCanvasH);
         eyes.fill(Qt::transparent);
