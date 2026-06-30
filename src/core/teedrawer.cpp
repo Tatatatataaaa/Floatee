@@ -105,7 +105,7 @@ bool TeeDrawer::load(const QString &skinPath)
     Tee = TeeBare;
     {
         QPainter painter(&Tee);
-        painter.drawPixmap(20, 28, TeeEyes);   // eyes slightly left for icon view
+        painter.drawPixmap(30, 28, TeeEyes);   // eyes right for icon view
     }
 
     return true;
