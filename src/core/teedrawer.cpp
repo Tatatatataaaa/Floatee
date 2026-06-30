@@ -105,9 +105,9 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeEyes_Close  = buildEyes(64, 96);     // fallback to normal
 
     // ── Foot ────────────────────────────────────────────────────────
-    // E zone left half: (192, 32, 32, 32) at standard 256×128
-    QPixmap rawFoot = copy(192, 32, 32, 32);
-    TeeFoot = rawFoot;  // 1:1 from source (32×32)
+    // E zone: full 64×32 foot region at standard 256×128
+    QPixmap rawFoot = copy(192, 32, 64, 32);
+    TeeFoot = rawFoot;  // 1:1 from source (64×32)
     QPixmap rightFoot = QPixmap::fromImage(
         TeeFoot.toImage().flipped(Qt::Horizontal));
 
@@ -116,8 +116,8 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeBare.fill(Qt::transparent);
     {
         QPainter painter(&TeeBare);
-        painter.drawPixmap(14, 55, TeeFoot);    // left foot
-        painter.drawPixmap(38, 55, rightFoot);  // right foot (mirrored)
+        painter.drawPixmap(0,  55, TeeFoot);    // left foot
+        painter.drawPixmap(32, 55, rightFoot);  // right foot (mirrored)
         painter.drawPixmap(0,  0,  TeeBody);    // body on top
     }
 
