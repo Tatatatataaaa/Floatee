@@ -78,8 +78,8 @@ bool TeeDrawer::load(const QString &skinPath)
 
     constexpr int kEyeSrcW = 32, kEyeSrcH = 32;
     constexpr int kEyeDispW = 32, kEyeDispH = 32;
-    constexpr int kEyesCanvasW = 52, kEyesCanvasH = 32;
-    constexpr int kEyePairOffset = 20;
+    constexpr int kEyesCanvasW = 48, kEyesCanvasH = 32;
+    constexpr int kEyePairOffset = 16;
 
     auto buildEyes = [&](int srcX, int srcY) {
         QPixmap eyeSrc  = copy(srcX, srcY, kEyeSrcW, kEyeSrcH);
@@ -128,7 +128,7 @@ bool TeeDrawer::load(const QString &skinPath)
     Tee = TeeBare;
     {
         QPainter painter(&Tee);
-        painter.drawPixmap(22, 28, TeeEyes);   // eyes centered on face
+        painter.drawPixmap(24, 28, TeeEyes);   // eyes centered on face
     }
 
     // ── Hue-shifted icon ────────────────────────────────────────────
