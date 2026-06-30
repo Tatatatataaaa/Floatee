@@ -132,8 +132,12 @@ bool TeeDrawer::load(const QString &skinPath)
         painter.drawPixmap(24, 28, TeeEyes);   // eyes centered on face
     }
 
-    // ── Hue-shifted icon ────────────────────────────────────────────
-    cTee = changeHue(Tee, 0);
+    // ── Thumbnail (eyes shifted left vs Tee) ────────────────────────
+    cTee = TeeBare;
+    {
+        QPainter painter(&cTee);
+        painter.drawPixmap(18, 28, TeeEyes);
+    }
     cTee = cTee.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
     return true;
