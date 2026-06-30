@@ -117,9 +117,9 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeBare.fill(Qt::transparent);
     {
         QPainter painter(&TeeBare);
-        painter.drawPixmap(14, 55, TeeFoot);    // left foot
         painter.drawPixmap(0,  0,  TeeBody);    // body
-        painter.drawPixmap(38, 55, rightFoot);  // right foot (mirrored)
+        painter.drawPixmap(14, 66, TeeFoot);    // left foot
+        painter.drawPixmap(38, 66, rightFoot);  // right foot (mirrored)
     }
 
     // ── Compose Tee (TeeBare + eyes) ────────────────────────────────
