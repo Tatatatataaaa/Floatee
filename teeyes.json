@@ -1,0 +1,9 @@
+{
+    "Background": ":/ProtectImg/assets/bg/neko.jpg",
+    "DataExisted": true,
+    "Duration": 10,
+    "Interval": 600,
+    "List": [
+    ],
+    "Reminder": true
+}
