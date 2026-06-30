@@ -1,29 +1,5 @@
 #include "teedrawer.h"
 #include <QDebug>
-#include <QFile>
-#include <QtMath>
-
-// ── Hue shift ──────────────────────────────────────────────────────────
-
-QPixmap TeeDrawer::changeHue(const QPixmap &pixmap, int hueShift)
-{
-    QImage image = pixmap.toImage();
-    for (int y = 0; y < image.height(); ++y) {
-        for (int x = 0; x < image.width(); ++x) {
-            QColor color = QColor(image.pixel(x, y));
-            if (color.lightness() == 0)
-                continue;
-            if (y == 0 && x <= 5)
-                continue;
-            int h, s, l, a;
-            color.getHsl(&h, &s, &l, &a);
-            h = (h + hueShift) % 360;
-            color.setHsl(h, s, l, a);
-            image.setPixel(x, y, color.rgb());
-        }
-    }
-    return QPixmap::fromImage(image);
-}
 
 // ── Constructor ─────────────────────────────────────────────────────────
 
@@ -125,20 +101,12 @@ bool TeeDrawer::load(const QString &skinPath)
         painter.drawPixmap(34, 56, rightFoot);  // right foot (mirrored)
     }
 
-    // ── Compose Tee (TeeBare + eyes) ────────────────────────────────
+    // ── Compose Tee (TeeBare + eyes, for tray/window icon) ──────────
     Tee = TeeBare;
     {
         QPainter painter(&Tee);
-        painter.drawPixmap(24, 28, TeeEyes);   // eyes centered on face
+        painter.drawPixmap(20, 28, TeeEyes);   // eyes slightly left for icon view
     }
-
-    // ── Thumbnail (eyes shifted left vs Tee) ────────────────────────
-    cTee = TeeBare;
-    {
-        QPainter painter(&cTee);
-        painter.drawPixmap(18, 28, TeeEyes);
-    }
-    cTee = cTee.scaled(80, 80, Qt::KeepAspectRatio, Qt::SmoothTransformation);
 
     return true;
 }

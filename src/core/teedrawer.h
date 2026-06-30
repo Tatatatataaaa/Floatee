@@ -15,12 +15,9 @@ public:
     bool load(const QString &skinPath);
     static QString defaultSkinPath() { return QStringLiteral(":/skins/Tata.png"); }
 
-    QPixmap changeHue(const QPixmap &pixmap, int hueShift);
-
     QPixmap SkinFile;
     QPixmap Tee;       // full tee with eyes (used as window / tray icon)
     QPixmap TeeBare;   // tee without eyes (used as draggable body background)
-    QPixmap cTee;
     QPixmap TeeBody;
     QPixmap TeeEyes;
     QPixmap TeeEyes_Happy;
