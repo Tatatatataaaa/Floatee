@@ -66,7 +66,7 @@ void Floatee::Initialize()
 
     TeeEyes.setParent(this);
     TeeEyes.resize(52, 32);
-    TeeEyes.move(22, 28);
+    TeeEyes.move(24, 28);
     TeeEyes.setAttribute(Qt::WA_TransparentForMouseEvents);
     TeeEyes.setPixmap(ExecTeeDrawer.TeeEyes);
     TeeEyes.raise();
@@ -177,7 +177,7 @@ void Floatee::Eyes::MouseMoveEvent(QMouseEvent *e)
     if (dy == -10)
         dy++;
 
-    setGeometry(22 + dx, 28 + dy, 52, 32);
+    setGeometry(24 + dx, 28 + dy, 52, 32);
 }
 
 void Floatee::on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason)

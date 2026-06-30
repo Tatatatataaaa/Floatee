@@ -127,7 +127,7 @@ bool TeeDrawer::load(const QString &skinPath)
     Tee = TeeBare;
     {
         QPainter painter(&Tee);
-        painter.drawPixmap(22, 28, TeeEyes);   // eyes centered on face
+        painter.drawPixmap(24, 28, TeeEyes);   // eyes centered on face
     }
 
     // ── Hue-shifted icon ────────────────────────────────────────────
