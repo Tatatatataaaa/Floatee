@@ -1,6 +1,7 @@
 #include "floatee.h"
 #include "ui_floatee.h"
 #include <QIcon>
+#include <QActionGroup>
 #include <QStandardPaths>
 #include <QDir>
 #include <cmath>
@@ -37,8 +38,14 @@ void Floatee::Initialize()
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_MacAlwaysShowToolWindow, true);
-    setWindowIcon(QIcon(ExecTeeDrawer.Tee));
     resize(96, 96);
+
+    // Load saved skin preference
+    QString savedSkin = Setup.value("Skin").toString();
+    if (!savedSkin.isEmpty() && savedSkin.startsWith(":/"))
+        ExecTeeDrawer.load(savedSkin);
+
+    setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
     BodyLabel = new QLabel(this);
     BodyLabel->setGeometry(0, 0, 96, 96);
@@ -53,6 +60,38 @@ void Floatee::Initialize()
     AlwaysOnTopAction->setCheckable(true);
     AlwaysOnTopAction->setChecked(Setup["Always_on_the_Top"].toBool());
     connect(AlwaysOnTopAction, &QAction::triggered, this, &Floatee::toggleAlwaysOnTop);
+
+    // ── Skin submenu ────────────────────────────────────────────────
+    QVector<QPair<QString, QString>> skins = {
+        {"Tata",               ":/skins/Tata.png"},
+        {"Tataa",              ":/skins/Tataa.png"},
+        {"Chinese By Whis",    ":/skins/chinese_by_whis.png"},
+        {"Coala Pinky",        ":/skins/coala_pinky.png"},
+        {"Mouse",              ":/skins/mouse.png"},
+        {"Santa Bluekitty",    ":/skins/santa_bluekitty.png"},
+        {"Flower Crown Ghost", ":/skins/flower_crown_ghost.png"},
+        {"Ghost Halloween",    ":/skins/ghost_halloween.png"},
+        {"Ghost Zeeli",        ":/skins/ghost_zeeli.png"},
+    };
+
+    CurrentSkin = Setup.value("Skin").toString(TeeDrawer::defaultSkinPath());
+    if (!CurrentSkin.startsWith(":/"))
+        CurrentSkin = TeeDrawer::defaultSkinPath();
+
+    SkinMenu = new QMenu("Skin");
+    SkinGroup = new QActionGroup(SkinMenu);
+    SkinGroup->setExclusive(true);
+
+    for (const auto &[name, path] : skins) {
+        QAction *action = SkinMenu->addAction(name);
+        action->setCheckable(true);
+        action->setData(path);
+        action->setChecked(path == CurrentSkin);
+        SkinGroup->addAction(action);
+    }
+    connect(SkinMenu, &QMenu::triggered, this, &Floatee::switchSkin);
+
+    TrayMenu->addMenu(SkinMenu);
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
     connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
@@ -199,5 +238,24 @@ void Floatee::toggleAlwaysOnTop()
     show();
 
     Setup["Always_on_the_Top"] = on;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::switchSkin(QAction *action)
+{
+    QString path = action->data().toString();
+    if (path == CurrentSkin)
+        return;
+
+    ExecTeeDrawer.load(path);
+    CurrentSkin = path;
+
+    BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
+    TeeEyes.setPixmap(EyesSwitch ? ExecTeeDrawer.TeeEyes
+                                 : ExecTeeDrawer.TeeEyes_Clever);
+    TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
+    setWindowIcon(QIcon(ExecTeeDrawer.Tee));
+
+    Setup["Skin"] = path;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }

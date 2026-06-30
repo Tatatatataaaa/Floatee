@@ -61,8 +61,11 @@ public:
 
     QSystemTrayIcon TrayIcon;
     QMenu *TrayMenu = nullptr;
+    QMenu *SkinMenu = nullptr;
+    QActionGroup *SkinGroup = nullptr;
     QAction *AlwaysOnTopAction = nullptr;
     QLabel *BodyLabel = nullptr;
+    QString CurrentSkin;
     QRect EyesPos;
     QPoint MousePoint;
     bool MousePress;
@@ -77,6 +80,7 @@ public:
 protected slots:
     void on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void toggleAlwaysOnTop();
+    void switchSkin(QAction *action);
 
 private:
     Ui::Floatee *ui;
