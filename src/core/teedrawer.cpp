@@ -105,9 +105,18 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeEyes_Close  = buildEyes(64, 96);     // fallback to normal
 
     // ── Foot ────────────────────────────────────────────────────────
-    // Standard: left half of the foot region → 32×32 source
-    //   (1024×512 at 4K → 64×32 at 256; single foot = left 32×32)
-    QPixmap rawFoot = copy(192, 32, 32, 32);
+    // Auto-detect foot position: skins use either (0,96) or (192,32)
+    auto countOpaque = [&](int fx, int fy) {
+        QImage img = copy(fx, fy, 32, 32).toImage();
+        int n = 0;
+        for (int py = 0; py < 32; ++py)
+            for (int px = 0; px < 32; ++px)
+                if (qAlpha(img.pixel(px, py)) > 20) ++n;
+        return n;
+    };
+    int footSrcX = countOpaque(192, 32) > countOpaque(0, 96) ? 192 : 0;
+    int footSrcY = footSrcX == 192 ? 32 : 96;
+    QPixmap rawFoot = copy(footSrcX, footSrcY, 32, 32);
     TeeFoot = rawFoot;  // 1:1 from source (32×32)
     QPixmap rightFoot = QPixmap::fromImage(
         TeeFoot.toImage().flipped(Qt::Horizontal));
