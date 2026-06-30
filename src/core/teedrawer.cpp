@@ -104,23 +104,22 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeEyes_Happy  = buildEyes(160, 96);    // happy
     TeeEyes_Close  = buildEyes(64, 96);     // fallback to normal
 
-    // ── Feet ───────────────────────────────────────────────────────
+    // ── Foot ────────────────────────────────────────────────────────
     // Standard: left half of the foot region → 32×32 source
     //   (1024×512 at 4K → 64×32 at 256; single foot = left 32×32)
-    // Display: 1:1 (32×32), right foot = horizontally mirrored left foot
-    QPixmap footLeft = copy(192, 32, 32, 32);
-    TeeFoot = footLeft;
-    QPixmap footRight = QPixmap::fromImage(
-        footLeft.toImage().flipped(Qt::Horizontal));
+    QPixmap rawFoot = copy(192, 32, 32, 32);
+    TeeFoot = rawFoot;  // 1:1 from source (32×32)
+    QPixmap rightFoot = QPixmap::fromImage(
+        TeeFoot.toImage().flipped(Qt::Horizontal));
 
     // ── Compose TeeBare (body + feet, no eyes) ──────────────────────
     TeeBare = QPixmap(96, 96);
     TeeBare.fill(Qt::transparent);
     {
         QPainter painter(&TeeBare);
+        painter.drawPixmap(14, 55, TeeFoot);    // left foot
         painter.drawPixmap(0,  0,  TeeBody);    // body
-        painter.drawPixmap(20, 66, footLeft);   // left foot
-        painter.drawPixmap(44, 66, footRight);  // right foot (mirrored)
+        painter.drawPixmap(38, 55, rightFoot);  // right foot (mirrored)
     }
 
     // ── Compose Tee (TeeBare + eyes) ────────────────────────────────
