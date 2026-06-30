@@ -1,5 +1,0 @@
-/Users/tata/Library/CloudStorage/OneDrive-个人/Floatee/Floatee_250912/Floatee/build/CMakeFiles/Floatee.dir
-/Users/tata/Library/CloudStorage/OneDrive-个人/Floatee/Floatee_250912/Floatee/build/CMakeFiles/edit_cache.dir
-/Users/tata/Library/CloudStorage/OneDrive-个人/Floatee/Floatee_250912/Floatee/build/CMakeFiles/rebuild_cache.dir
-/Users/tata/Library/CloudStorage/OneDrive-个人/Floatee/Floatee_250912/Floatee/build/CMakeFiles/Floatee_autogen_timestamp_deps.dir
-/Users/tata/Library/CloudStorage/OneDrive-个人/Floatee/Floatee_250912/Floatee/build/CMakeFiles/Floatee_autogen.dir
