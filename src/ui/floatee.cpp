@@ -250,17 +250,18 @@ void Floatee::switchSkin(QAction *action)
     ExecTeeDrawer.load(path);
     CurrentSkin = path;
 
-    BodyLabel->clear();
+    const bool wasVisible = isVisible();
+    if (wasVisible)
+        hide();
+
     BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
-    TeeEyes.clear();
     TeeEyes.setPixmap(EyesSwitch ? ExecTeeDrawer.TeeEyes
                                  : ExecTeeDrawer.TeeEyes_Clever);
     TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
-    BodyLabel->update();
-    TeeEyes.update();
-    update();
+    if (wasVisible)
+        show();
 
     Setup["Skin"] = path;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
