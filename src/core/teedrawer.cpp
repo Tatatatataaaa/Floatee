@@ -73,13 +73,13 @@ bool TeeDrawer::load(const QString &skinPath)
     //   Normal:  (64, 96)    Angry:  (96, 96)
     //   Clumsy: (128, 96)    Happy: (160, 96)
     //
-    // Display: each 32×32 source eye → 20×20 on screen (keepAspectRatio)
-    // Eye-pair canvas: 38×27, left eye at (0,3), mirrored right at (18,3)
+    // Display: 1:1 from source (32×32 per eye), same as body 96→96
+    // Eye-pair canvas: 52×32, left eye at (0,0), mirrored right at (20,0)
 
     constexpr int kEyeSrcW = 32, kEyeSrcH = 32;
-    constexpr int kEyeDispW = 20, kEyeDispH = 20;
-    constexpr int kEyesCanvasW = 38, kEyesCanvasH = 27;
-    constexpr int kEyePairOffset = 18;
+    constexpr int kEyeDispW = 32, kEyeDispH = 32;
+    constexpr int kEyesCanvasW = 52, kEyesCanvasH = 32;
+    constexpr int kEyePairOffset = 20;
 
     auto buildEyes = [&](int srcX, int srcY) {
         QPixmap eyeSrc  = copy(srcX, srcY, kEyeSrcW, kEyeSrcH);
@@ -92,9 +92,8 @@ bool TeeDrawer::load(const QString &skinPath)
         QPixmap eyes(kEyesCanvasW, kEyesCanvasH);
         eyes.fill(Qt::transparent);
         QPainter p(&eyes);
-        int yOff = (kEyesCanvasH - kEyeDispH) / 2;   // 3px – vertically center
-        p.drawPixmap(0, yOff, eyeLeft);
-        p.drawPixmap(kEyePairOffset, yOff, eyeRight);
+        p.drawPixmap(0, 0, eyeLeft);
+        p.drawPixmap(kEyePairOffset, 0, eyeRight);
         p.end();
         return eyes;
     };
@@ -129,7 +128,7 @@ bool TeeDrawer::load(const QString &skinPath)
     Tee = TeeBare;
     {
         QPainter painter(&Tee);
-        painter.drawPixmap(40, 32, TeeEyes);   // eyes on face
+        painter.drawPixmap(22, 28, TeeEyes);   // eyes centered on face
     }
 
     // ── Hue-shifted icon ────────────────────────────────────────────
