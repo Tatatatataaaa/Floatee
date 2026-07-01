@@ -185,7 +185,7 @@ void Floatee::mousePressEvent(QMouseEvent *event)
         MousePoint = event->globalPosition().toPoint() - this->pos();
     }
     else if (event->button() == Qt::RightButton) {
-        CurrentEye = (CurrentEye + 1) % 5;
+        CurrentEye = (CurrentEye % 4) + 1;  // cycle Happy→Angry→Clever→Close
         TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
         // Sync menu checkmark
         if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
