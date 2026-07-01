@@ -1,16 +1,51 @@
 #include "teedrawer.h"
 #include <QDebug>
+#include <QtMath>
+#include <algorithm>
+
+// ── HSL adjustment ────────────────────────────────────────────────────
+
+QPixmap TeeDrawer::adjustHsl(const QPixmap &src, int hueShift,
+                             double satFactor, double lightFactor)
+{
+    // Use non-premultiplied RGBA8888 (Qt6 canonical format)
+    QImage image = src.toImage().convertToFormat(QImage::Format_RGBA8888);
+    for (int y = 0; y < image.height(); ++y) {
+        QRgb *line = reinterpret_cast<QRgb*>(image.scanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            QColor color = QColor::fromRgba(line[x]);
+            if (color.alpha() == 0)
+                continue;
+            float h, s, l, a;
+            color.getHslF(&h, &s, &l, &a);
+            if (h >= 0) {
+                h = std::fmod(h + hueShift / 360.0f, 1.0f);
+                s = std::clamp(s * static_cast<float>(satFactor), 0.0f, 1.0f);
+            } else if (hueShift != 0) {
+                // Inject hue into achromatic pixels so shift is visible
+                h = std::fmod(hueShift / 360.0f, 1.0f);
+                s = std::clamp(0.5f * static_cast<float>(satFactor), 0.0f, 1.0f);
+            }
+            if (h < 0) h += 1.0f;
+            l = std::clamp(l * static_cast<float>(lightFactor), 0.0f, 1.0f);
+            color.setHslF(h, s, l, a);
+            line[x] = color.rgba();
+        }
+    }
+    return QPixmap::fromImage(image);
+}
 
 // ── Constructor ─────────────────────────────────────────────────────────
 
 TeeDrawer::TeeDrawer(const QString &skinPath)
 {
-    load(skinPath);
+    load(skinPath, 0, 1.0, 1.0);
 }
 
 // ── Load ────────────────────────────────────────────────────────────────
 
-bool TeeDrawer::load(const QString &skinPath)
+bool TeeDrawer::load(const QString &skinPath,
+                  int hueShift, double satFactor, double lightFactor)
 {
     QPixmap loaded;
     bool ok = loaded.load(skinPath);
@@ -25,6 +60,9 @@ bool TeeDrawer::load(const QString &skinPath)
         return false;
     }
     SkinFile = loaded;
+
+    if (hueShift != 0 || satFactor != 1.0 || lightFactor != 1.0)
+        SkinFile = adjustHsl(SkinFile, hueShift, satFactor, lightFactor);
 
     // ── Proportional scale factors (base = 256×128 standard sheet) ──
     double sx = static_cast<double>(SkinFile.width())  / 256.0;

@@ -12,8 +12,9 @@ class TeeDrawer
 public:
     explicit TeeDrawer(const QString &skinPath = defaultSkinPath());
 
-    bool load(const QString &skinPath);
+    bool load(const QString &skinPath, int hueShift = 0, double satFactor = 1.0, double lightFactor = 1.0);
     static QString defaultSkinPath() { return QStringLiteral(":/skins/Tata.png"); }
+    static QPixmap adjustHsl(const QPixmap &src, int hueShift, double satFactor, double lightFactor);
 
     QPixmap SkinFile;
     QPixmap Tee;       // full tee with eyes (used as window / tray icon)

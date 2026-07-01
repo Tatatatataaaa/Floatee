@@ -4,6 +4,17 @@
 #include <QActionGroup>
 #include <QStandardPaths>
 #include <QDir>
+#include <QFile>
+#include <QCoreApplication>
+#include <QDirIterator>
+#include <QDesktopServices>
+#include <QUrl>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QPushButton>
+#include <QSlider>
+#include <QHBoxLayout>
+#include <QVBoxLayout>
 #include <cmath>
 
 static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Clever, 4=Dazed
@@ -20,7 +31,7 @@ static QPixmap eyePixmap(const TeeDrawer &d, int idx) {
 
 void Floatee::Loading()
 {
-    QString dataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Floatee";
+    QString dataDir = QCoreApplication::applicationDirPath();
     QDir().mkpath(dataDir);
     Path_Setup = dataDir + "/setup.json";
     Setup = JsonOpt::File2Json(Path_Setup).object();
@@ -50,10 +61,15 @@ void Floatee::Initialize()
     setAttribute(Qt::WA_MacAlwaysShowToolWindow, true);
     resize(96, 96);
 
-    // Load saved skin preference
+    // Load saved skin preference with per-skin HSL adjustments
     QString savedSkin = Setup.value("Skin").toString();
-    if (!savedSkin.isEmpty() && savedSkin.startsWith(":/"))
-        ExecTeeDrawer.load(savedSkin);
+    QJsonObject skinHsl = Setup.value("SkinHSL").toObject();
+    QJsonObject hsl = skinHsl.value(savedSkin).toObject();
+    HueShift = hsl.value("HueShift").toInt(0);
+    SatFactor = hsl.value("SatFactor").toDouble(1.0);
+    LightFactor = hsl.value("LightFactor").toDouble(1.0);
+    if (!savedSkin.isEmpty())
+        ExecTeeDrawer.load(savedSkin, HueShift, SatFactor, LightFactor);
 
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
@@ -101,6 +117,9 @@ void Floatee::Initialize()
     }
     connect(EyeMenu, &QMenu::triggered, this, &Floatee::switchEye);
 
+    QAction *colorAction = TrayMenu->addAction("Color Adjust...");
+    connect(colorAction, &QAction::triggered, this, &Floatee::openColorDialog);
+
     // ── Skin submenu ────────────────────────────────────────────────
     QVector<QPair<QString, QString>> skins = {
         {"Tata",               ":/skins/Tata.png"},
@@ -115,7 +134,7 @@ void Floatee::Initialize()
     };
 
     CurrentSkin = Setup.value("Skin").toString(TeeDrawer::defaultSkinPath());
-    if (!CurrentSkin.startsWith(":/"))
+    if (!QFile::exists(CurrentSkin))
         CurrentSkin = TeeDrawer::defaultSkinPath();
 
     SkinMenu = new QMenu("Skin");
@@ -129,6 +148,31 @@ void Floatee::Initialize()
         action->setChecked(path == CurrentSkin);
         SkinGroup->addAction(action);
     }
+
+    // ── External skins from local skins/ folder ─────────────────────
+    const QString skinsDir = QCoreApplication::applicationDirPath() + "/skins";
+    QDirIterator it(skinsDir, {"*.png"}, QDir::Files);
+    bool hasExternal = false;
+    while (it.hasNext()) {
+        it.next();
+        if (!hasExternal) {
+            SkinMenu->addSeparator();
+            hasExternal = true;
+        }
+        QAction *action = SkinMenu->addAction(it.fileInfo().completeBaseName());
+        action->setCheckable(true);
+        action->setData(it.filePath());
+        action->setChecked(it.filePath() == CurrentSkin);
+        SkinGroup->addAction(action);
+    }
+
+    SkinMenu->addSeparator();
+    QAction *openSkinFolder = SkinMenu->addAction("Open Skins Folder");
+    connect(openSkinFolder, &QAction::triggered, this, [skinsDir]() {
+        QDir().mkpath(skinsDir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(skinsDir));
+    });
+
     connect(SkinMenu, &QMenu::triggered, this, &Floatee::switchSkin);
 
     TrayMenu->addMenu(EyeMenu);
@@ -303,10 +347,17 @@ void Floatee::toggleTeEyes()
 void Floatee::switchSkin(QAction *action)
 {
     QString path = action->data().toString();
-    if (path == CurrentSkin)
+    if (path.isEmpty() || path == CurrentSkin)
         return;
 
-    ExecTeeDrawer.load(path);
+    // Load per-skin HSL for the new skin
+    QJsonObject skinHsl = Setup.value("SkinHSL").toObject();
+    QJsonObject hsl = skinHsl.value(path).toObject();
+    HueShift = hsl.value("HueShift").toInt(0);
+    SatFactor = hsl.value("SatFactor").toDouble(1.0);
+    LightFactor = hsl.value("LightFactor").toDouble(1.0);
+
+    ExecTeeDrawer.load(path, HueShift, SatFactor, LightFactor);
     CurrentSkin = path;
 
     const bool wasVisible = isVisible();
@@ -335,5 +386,90 @@ void Floatee::switchEye(QAction *action)
     TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
 
     Setup["Eye"] = idx;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::openColorDialog()
+{
+    const int origHue = HueShift;
+    const double origSat = SatFactor;
+    const double origLight = LightFactor;
+
+    QDialog dlg(this);
+    dlg.setWindowTitle("Color Adjust");
+
+    auto *hueSlider = new QSlider(Qt::Horizontal);
+    hueSlider->setRange(-180, 180);
+    hueSlider->setValue(HueShift);
+    auto *hueLabel = new QLabel(QString("Hue: %1").arg(HueShift));
+
+    auto *satSlider = new QSlider(Qt::Horizontal);
+    satSlider->setRange(0, 200);
+    satSlider->setValue(qRound(SatFactor * 100));
+    auto *satLabel = new QLabel(QString("Saturation: %1%").arg(qRound(SatFactor * 100)));
+
+    auto *lightSlider = new QSlider(Qt::Horizontal);
+    lightSlider->setRange(0, 200);
+    lightSlider->setValue(qRound(LightFactor * 100));
+    auto *lightLabel = new QLabel(QString("Lightness: %1%").arg(qRound(LightFactor * 100)));
+
+    auto updateLabels = [&]() {
+        hueLabel->setText(QString("Hue: %1").arg(hueSlider->value()));
+        satLabel->setText(QString("Saturation: %1%").arg(satSlider->value()));
+        lightLabel->setText(QString("Lightness: %1%").arg(lightSlider->value()));
+    };
+    connect(hueSlider, &QSlider::valueChanged, this, updateLabels);
+    connect(satSlider, &QSlider::valueChanged, this, updateLabels);
+    connect(lightSlider, &QSlider::valueChanged, this, updateLabels);
+
+    auto apply = [&]() {
+        int h = hueSlider->value();
+        double s = satSlider->value() / 100.0;
+        double l = lightSlider->value() / 100.0;
+        ExecTeeDrawer.load(CurrentSkin, h, s, l);
+        BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
+        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
+        setWindowIcon(QIcon(ExecTeeDrawer.Tee));
+    };
+
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->addWidget(hueLabel);
+    layout->addWidget(hueSlider);
+    layout->addWidget(satLabel);
+    layout->addWidget(satSlider);
+    layout->addWidget(lightLabel);
+    layout->addWidget(lightSlider);
+
+    auto *btnBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
+    auto *applyBtn = btnBox->addButton("Apply", QDialogButtonBox::ApplyRole);
+    layout->addWidget(btnBox);
+    connect(applyBtn, &QPushButton::clicked, this, apply);
+    connect(btnBox, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btnBox, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    if (dlg.exec() != QDialog::Accepted) {
+        // Revert to original
+        ExecTeeDrawer.load(CurrentSkin, origHue, origSat, origLight);
+        BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
+        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
+        setWindowIcon(QIcon(ExecTeeDrawer.Tee));
+        return;
+    }
+
+    HueShift = hueSlider->value();
+    SatFactor = satSlider->value() / 100.0;
+    LightFactor = lightSlider->value() / 100.0;
+    apply();
+
+    // Save per-skin HSL
+    QJsonObject skinHsl = Setup.value("SkinHSL").toObject();
+    QJsonObject hsl;
+    hsl["HueShift"] = HueShift;
+    hsl["SatFactor"] = SatFactor;
+    hsl["LightFactor"] = LightFactor;
+    skinHsl[CurrentSkin] = hsl;
+    Setup["SkinHSL"] = skinHsl;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }

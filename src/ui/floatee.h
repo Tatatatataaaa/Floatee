@@ -77,6 +77,9 @@ public:
     WindowSideHide ExecWindowSideHide;
     TeEyes ExecTeEyes;
     TeeDrawer ExecTeeDrawer;
+    int HueShift = 0;
+    double SatFactor = 1.0;
+    double LightFactor = 1.0;
 
     QJsonObject Setup;
     QString Path_Setup;
@@ -88,6 +91,7 @@ protected slots:
     void toggleTeEyes();
     void switchSkin(QAction *action);
     void switchEye(QAction *action);
+    void openColorDialog();
 
 private:
     Ui::Floatee *ui;

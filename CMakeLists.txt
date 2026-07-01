@@ -70,6 +70,8 @@ endif()
 
 target_include_directories(Floatee PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
+set_target_properties(Floatee PROPERTIES WIN32_EXECUTABLE TRUE)
+
 if(APPLE)
     set(EXECUTABLE_NAME "Floatee")
     configure_file(
@@ -82,8 +84,13 @@ if(APPLE)
         MACOSX_BUNDLE_GUI_IDENTIFIER "com.floatee.app"
         MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
         MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        MACOSX_BUNDLE_ICON_FILE "Floatee.icns"
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
     )
+    set_source_files_properties(assets/Floatee.icns PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources"
+    )
+    target_sources(Floatee PRIVATE assets/Floatee.icns)
 endif()
 
 target_link_libraries(Floatee PRIVATE
