@@ -1,5 +1,6 @@
 build/
 build_check/
+build_win/
 *.app
 .DS_Store
 *.user

@@ -63,8 +63,7 @@ bool TeeDrawer::load(const QString &skinPath)
         QPixmap eyeLeft = eyeSrc.scaled(kEyeDispW, kEyeDispH,
                                         Qt::KeepAspectRatio,
                                         Qt::SmoothTransformation);
-        QPixmap eyeRight = QPixmap::fromImage(
-            eyeLeft.toImage().flipped(Qt::Horizontal));
+        QPixmap eyeRight = eyeLeft.transformed(QTransform::fromScale(-1, 1));
 
         QPixmap eyes(kEyesCanvasW, kEyesCanvasH);
         eyes.fill(Qt::transparent);
@@ -88,8 +87,7 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeFoot = rawFoot.scaled(64, 32,
                              Qt::KeepAspectRatio,
                              Qt::SmoothTransformation);
-    QPixmap rightFoot = QPixmap::fromImage(
-        TeeFoot.toImage().flipped(Qt::Horizontal));
+    QPixmap rightFoot = TeeFoot.transformed(QTransform::fromScale(-1, 1));
 
     // ── Compose TeeBare (body + feet, no eyes) ──────────────────────
     TeeBare = QPixmap(96, 96);

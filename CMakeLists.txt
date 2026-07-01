@@ -92,6 +92,24 @@ target_link_libraries(Floatee PRIVATE
     Qt6::Widgets
 )
 
+# ── Post-build: copy MinGW runtime DLLs (windeployqt doesn't handle these) ──
+if(MINGW)
+    get_filename_component(MINGW_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(MINGW_DLLS
+        libstdc++-6.dll
+        libgcc_s_seh-1.dll
+        libwinpthread-1.dll
+    )
+    foreach(dll ${MINGW_DLLS})
+        add_custom_command(TARGET Floatee POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${MINGW_BIN_DIR}/${dll}"
+                "$<TARGET_FILE_DIR:Floatee>"
+            COMMENT "Copying ${dll} to build dir"
+        )
+    endforeach()
+endif()
+
 if(WIN32)
     target_link_libraries(Floatee PRIVATE winmm)
 elseif(APPLE)
