@@ -61,6 +61,16 @@ void Floatee::Initialize()
     AlwaysOnTopAction->setChecked(Setup["Always_on_the_Top"].toBool());
     connect(AlwaysOnTopAction, &QAction::triggered, this, &Floatee::toggleAlwaysOnTop);
 
+    WindowSideHideAction = TrayMenu->addAction("Window Side Hide");
+    WindowSideHideAction->setCheckable(true);
+    WindowSideHideAction->setChecked(Setup["Enable_WindowSideHide"].toBool());
+    connect(WindowSideHideAction, &QAction::triggered, this, &Floatee::toggleWindowSideHide);
+
+    TeEyesAction = TrayMenu->addAction("Eye Care");
+    TeEyesAction->setCheckable(true);
+    TeEyesAction->setChecked(Setup["Enable_TeEyes"].toBool());
+    connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
+
     // ── Skin submenu ────────────────────────────────────────────────
     QVector<QPair<QString, QString>> skins = {
         {"Tata",               ":/skins/Tata.png"},
@@ -238,6 +248,22 @@ void Floatee::toggleAlwaysOnTop()
     show();
 
     Setup["Always_on_the_Top"] = on;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::toggleWindowSideHide()
+{
+    bool on = WindowSideHideAction->isChecked();
+    ExecWindowSideHide.Enabled = on;
+    Setup["Enable_WindowSideHide"] = on;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::toggleTeEyes()
+{
+    bool on = TeEyesAction->isChecked();
+    ExecTeEyes.Enabled = on;
+    Setup["Enable_TeEyes"] = on;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 

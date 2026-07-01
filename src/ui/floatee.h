@@ -64,6 +64,8 @@ public:
     QMenu *SkinMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
     QAction *AlwaysOnTopAction = nullptr;
+    QAction *WindowSideHideAction = nullptr;
+    QAction *TeEyesAction = nullptr;
     QLabel *BodyLabel = nullptr;
     QString CurrentSkin;
     QRect EyesPos;
@@ -80,6 +82,8 @@ public:
 protected slots:
     void on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void toggleAlwaysOnTop();
+    void toggleWindowSideHide();
+    void toggleTeEyes();
     void switchSkin(QAction *action);
 
 private:
