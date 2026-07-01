@@ -22,7 +22,7 @@ public:
     QPixmap TeeEyes;
     QPixmap TeeEyes_Happy;
     QPixmap TeeEyes_Angry;
-    QPixmap TeeEyes_Close;
+    QPixmap TeeEyes_Dazed;
     QPixmap TeeEyes_Clever;
     QPixmap TeeEye;
     QPixmap TeeFoot;

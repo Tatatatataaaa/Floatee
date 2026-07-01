@@ -79,7 +79,7 @@ bool TeeDrawer::load(const QString &skinPath)
     TeeEyes_Angry  = buildEyes(96, 96);     // angry
     TeeEyes_Clever = buildEyes(128, 96);    // clumsy → clever
     TeeEyes_Happy  = buildEyes(160, 96);    // happy
-    TeeEyes_Close  = buildEyes(64, 96);     // fallback to normal
+    TeeEyes_Dazed  = buildEyes(224, 96);    // H region: dazed
 
     // ── Foot ────────────────────────────────────────────────────────
     // E zone: full 64×32 foot region at standard 256×128
