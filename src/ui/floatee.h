@@ -62,7 +62,9 @@ public:
     QSystemTrayIcon TrayIcon;
     QMenu *TrayMenu = nullptr;
     QMenu *SkinMenu = nullptr;
+    QMenu *EyeMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
+    QActionGroup *EyeGroup = nullptr;
     QAction *AlwaysOnTopAction = nullptr;
     QAction *WindowSideHideAction = nullptr;
     QAction *TeEyesAction = nullptr;
@@ -85,6 +87,7 @@ protected slots:
     void toggleWindowSideHide();
     void toggleTeEyes();
     void switchSkin(QAction *action);
+    void switchEye(QAction *action);
 
 private:
     Ui::Floatee *ui;

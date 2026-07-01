@@ -6,7 +6,17 @@
 #include <QDir>
 #include <cmath>
 
-bool EyesSwitch = true;
+static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Clever, 4=Close
+
+static QPixmap eyePixmap(const TeeDrawer &d, int idx) {
+    switch (idx) {
+    case 1: return d.TeeEyes_Happy;
+    case 2: return d.TeeEyes_Angry;
+    case 3: return d.TeeEyes_Clever;
+    case 4: return d.TeeEyes_Close;
+    default: return d.TeeEyes;
+    }
+}
 
 void Floatee::Loading()
 {
@@ -71,6 +81,26 @@ void Floatee::Initialize()
     TeEyesAction->setChecked(Setup["Enable_TeEyes"].toBool());
     connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
 
+    // ── Eye submenu ──────────────────────────────────────────────────
+    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
+
+    QVector<QPair<QString, int>> eyeTypes = {
+        {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Clever", 3}, {"Close", 4},
+    };
+
+    EyeMenu = new QMenu("Eyes");
+    EyeGroup = new QActionGroup(EyeMenu);
+    EyeGroup->setExclusive(true);
+
+    for (const auto &[name, idx] : eyeTypes) {
+        QAction *action = EyeMenu->addAction(name);
+        action->setCheckable(true);
+        action->setData(idx);
+        action->setChecked(idx == CurrentEye);
+        EyeGroup->addAction(action);
+    }
+    connect(EyeMenu, &QMenu::triggered, this, &Floatee::switchEye);
+
     // ── Skin submenu ────────────────────────────────────────────────
     QVector<QPair<QString, QString>> skins = {
         {"Tata",               ":/skins/Tata.png"},
@@ -101,6 +131,7 @@ void Floatee::Initialize()
     }
     connect(SkinMenu, &QMenu::triggered, this, &Floatee::switchSkin);
 
+    TrayMenu->addMenu(EyeMenu);
     TrayMenu->addMenu(SkinMenu);
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
@@ -117,7 +148,7 @@ void Floatee::Initialize()
     TeeEyes.resize(52, 32);
     TeeEyes.move(24, 28);
     TeeEyes.setAttribute(Qt::WA_TransparentForMouseEvents);
-    TeeEyes.setPixmap(ExecTeeDrawer.TeeEyes);
+    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
     TeeEyes.raise();
     TeeEyes.show();
 
@@ -154,9 +185,11 @@ void Floatee::mousePressEvent(QMouseEvent *event)
         MousePoint = event->globalPosition().toPoint() - this->pos();
     }
     else if (event->button() == Qt::RightButton) {
-        EyesSwitch = !EyesSwitch;
-        TeeEyes.setPixmap(EyesSwitch ? ExecTeeDrawer.TeeEyes
-                                     : ExecTeeDrawer.TeeEyes_Clever);
+        CurrentEye = (CurrentEye + 1) % 5;
+        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        // Sync menu checkmark
+        if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
+            EyeGroup->actions()[CurrentEye]->setChecked(true);
     }
     QMainWindow::mousePressEvent(event);
 }
@@ -182,7 +215,7 @@ void Floatee::Eyes::MouseMoveEvent(QMouseEvent *e)
     QRect TeePos = parentTee->GetTeePos();
     int dx = pG.x() - TeePos.x() - 57;
     int dy = pG.y() - TeePos.y() - 44;
-    if (EyesSwitch)
+    if (CurrentEye == 0)
     {
         if (std::abs(dx) <= 30 && dy >= -30 && dy <= 0)
             setPixmap(parentTee->ExecTeeDrawer.TeeEyes_Happy);
@@ -281,8 +314,7 @@ void Floatee::switchSkin(QAction *action)
         hide();
 
     BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
-    TeeEyes.setPixmap(EyesSwitch ? ExecTeeDrawer.TeeEyes
-                                 : ExecTeeDrawer.TeeEyes_Clever);
+    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
     TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
@@ -290,5 +322,18 @@ void Floatee::switchSkin(QAction *action)
         show();
 
     Setup["Skin"] = path;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::switchEye(QAction *action)
+{
+    int idx = action->data().toInt();
+    if (idx == CurrentEye)
+        return;
+
+    CurrentEye = idx;
+    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+
+    Setup["Eye"] = idx;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
