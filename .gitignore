@@ -6,3 +6,4 @@ build_win/
 *.user
 extracted/
 build_android/
+Floatee.pro

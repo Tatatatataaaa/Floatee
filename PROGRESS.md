@@ -249,9 +249,9 @@ cmake --build build_android
 
 ### 中优先级
 
-- [ ] **`Floatee.pro` (qmake) 已过期**
+- [x] **`Floatee.pro` (qmake) 已过期**
   - 源文件列表、平台文件、资源文件均与 CMake 不同步
-  - 可考虑移除或同步更新
+  - 已移除
 
 - [ ] **`assets/main/` 资源可能已废弃**
   - `eyes.png`、`eyes_clever.png` 等看起来已不被 `teedrawer.cpp` 使用
