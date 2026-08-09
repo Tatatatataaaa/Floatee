@@ -17,7 +17,7 @@ if(MSVC)
     add_compile_definitions(NOMINMAX)
 endif()
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 
 # ── tee_render: extracted DDNet Tee render pipeline (zero-dependency C++17) ──
 set(TEE_RENDER_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
@@ -51,6 +51,7 @@ set(SOURCES
     src/ui/teeyes.cpp
     src/ui/windowsidehide.cpp
     src/ui/emoticonwindow.cpp
+    src/net/netclient.cpp
     ${PLATFORM_SOURCES}
 )
 
@@ -62,6 +63,7 @@ set(HEADERS
     src/ui/teeyes.h
     src/ui/windowsidehide.h
     src/ui/emoticonwindow.h
+    src/net/netclient.h
     src/platform/platformwindowinfo.h
 )
 
@@ -111,6 +113,7 @@ target_link_libraries(Floatee PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    Qt6::Network
     tee_render
 )
 

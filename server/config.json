@@ -1,0 +1,33 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "wsPort": 8765,
+    "tcpPort": 8764,
+    "adminPort": 8766,
+    "maxConnections": 1000
+  },
+  "room": {
+    "capacity": 8,
+    "maxRooms": 100,
+    "roomIdLength": 6,
+    "joinCodeLength": 8,
+    "emptyTtlMs": 300000,
+    "idleTimeoutMs": 30000
+  },
+  "throttle": {
+    "emoticonPerSec": 5,
+    "skinPerSec": 2,
+    "mousePerSec": 20
+  },
+  "security": {
+    "maxConnsPerDevice": 1,
+    "maxNameLen": 32,
+    "maxSkinLen": 64,
+    "maxChatLen": 256,
+    "maxMessageSize": 8192
+  },
+  "admin": {
+    "adminKey": "",
+    "allowRemote": false
+  }
+}

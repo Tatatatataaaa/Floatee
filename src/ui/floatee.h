@@ -18,6 +18,7 @@
 #include "ui/windowsidehide.h"
 #include "ui/teeyes.h"
 #include "ui/emoticonwindow.h"
+#include "net/netclient.h"
 #include "core/jsonopt.h"
 #include "core/teedrawer.h"
 
@@ -94,6 +95,8 @@ public:
     // Over-head emoticon: independent floating window + random trigger timer.
     EmoticonWindow *EmoticonWin = nullptr;
     QTimer *EmoticonRandomTimer = nullptr;
+    // Network test client (online 分支).
+    NetClient *m_net = nullptr;
     // True while the cursor is hovering the tee (petting); used to edge-trigger
     // the hearts emoticon once per entry instead of spamming every frame.
     bool m_petting = false;
@@ -128,6 +131,9 @@ protected slots:
     void switchEye(QAction *action);
     void switchSize(QAction *action);
     void switchFeather(QAction *action);
+    // Network communication test (online 分支): connect local server → hello →
+    // create_room, show the result.
+    void networkTest();
     // One-click multi-instance: launch a NEW PROCESS with an auto-generated
     // unique profile name (no dialog) for quick side-by-side pets.
     void launchNewInstance();

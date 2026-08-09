@@ -21,6 +21,7 @@
 #include <QLineEdit>
 #include <QProcess>
 #include <QFileInfo>
+#include <QMessageBox>
 #include <cmath>
 
 static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
@@ -80,11 +81,10 @@ void Floatee::Loading()
         Setup.insert("Setup_Existed", true);
         JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
     }
-    ExecWindowSideHide.Enabled = Setup["Enable_WindowSideHide"].toBool();
-    ExecTeEyes.Enabled = Setup["Enable_TeEyes"].toBool();
-#if !defined(Q_OS_WIN) && !defined(Q_OS_MACOS)
+    // ── online 分支：WSH 与 Eye Care 对联机冗余，强制关闭（托盘入口已屏蔽）──
+    // （此改动仅存在于 online 分支，勿合回 main；如需恢复删除本注释即可）
     ExecWindowSideHide.Enabled = false;
-#endif
+    ExecTeEyes.Enabled = false;
     qDebug() << "WSH" << ExecWindowSideHide.Enabled;
     qDebug() << "TES" << ExecTeEyes.Enabled;
 }
@@ -135,15 +135,17 @@ void Floatee::Initialize()
     AlwaysOnTopAction->setChecked(Setup["Always_on_the_Top"].toBool());
     connect(AlwaysOnTopAction, &QAction::triggered, this, &Floatee::toggleAlwaysOnTop);
 
-    WindowSideHideAction = TrayMenu->addAction("Window Side Hide");
-    WindowSideHideAction->setCheckable(true);
-    WindowSideHideAction->setChecked(Setup["Enable_WindowSideHide"].toBool());
-    connect(WindowSideHideAction, &QAction::triggered, this, &Floatee::toggleWindowSideHide);
-
-    TeEyesAction = TrayMenu->addAction("Eye Care");
-    TeEyesAction->setCheckable(true);
-    TeEyesAction->setChecked(Setup["Enable_TeEyes"].toBool());
-    connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
+    // ── online 分支：WSH(Window Side Hide) 与 Eye Care 对联机冗余，屏蔽托盘入口 ──
+    // （此改动仅存在于 online 分支，勿合回 main；如需恢复删除本注释块即可）
+    // WindowSideHideAction = TrayMenu->addAction("Window Side Hide");
+    // WindowSideHideAction->setCheckable(true);
+    // WindowSideHideAction->setChecked(Setup["Enable_WindowSideHide"].toBool());
+    // connect(WindowSideHideAction, &QAction::triggered, this, &Floatee::toggleWindowSideHide);
+    //
+    // TeEyesAction = TrayMenu->addAction("Eye Care");
+    // TeEyesAction->setCheckable(true);
+    // TeEyesAction->setChecked(Setup["Enable_TeEyes"].toBool());
+    // connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
 
     // ── Eye submenu ──────────────────────────────────────────────────
     // CurrentEye already loaded from default.json above
@@ -260,6 +262,11 @@ void Floatee::Initialize()
 
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
+
+    // ── online 分支：网络通信测试入口（连本地服务器 → hello → create_room）──
+    TrayMenu->addSeparator();
+    QAction *netTestAction = TrayMenu->addAction("Network Test...");
+    connect(netTestAction, &QAction::triggered, this, &Floatee::networkTest);
 
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
@@ -606,6 +613,45 @@ void Floatee::switchFeather(QAction *action)
 
     Setup["Feather"] = f;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::networkTest()
+{
+    // online 分支：连本地服务器(TCP 8764) → hello → create_room，弹窗显示结果。
+    if (!m_net) {
+        m_net = new NetClient(this);
+        connect(m_net, &NetClient::connected, this, [this]() {
+            m_net->sendJson(QJsonObject{
+                {QStringLiteral("type"), QStringLiteral("hello")},
+                {QStringLiteral("clientId"), QStringLiteral("floatee-test")},
+                {QStringLiteral("deviceId"), QStringLiteral("floatee-test-device")},
+                {QStringLiteral("displayName"), QStringLiteral("FloateeTest")},
+            });
+        });
+        connect(m_net, &NetClient::messageReceived, this, [this](const QJsonObject &msg) {
+            const QString type = msg.value(QStringLiteral("type")).toString();
+            if (type == QLatin1String("welcome")) {
+                m_net->sendJson(QJsonObject{
+                    {QStringLiteral("type"), QStringLiteral("create_room")},
+                    {QStringLiteral("roomName"), QStringLiteral("floatee-test-room")},
+                });
+            } else if (type == QLatin1String("room_created")) {
+                QMessageBox::information(this, QStringLiteral("Network Test"),
+                    QStringLiteral("已连接服务器并创建房间:\n房间号: %1\n邀请码: %2")
+                        .arg(msg.value(QStringLiteral("roomId")).toString(),
+                             msg.value(QStringLiteral("joinCode")).toString()));
+                m_net->disconnectFromServer();
+            } else if (type == QLatin1String("error")) {
+                QMessageBox::warning(this, QStringLiteral("Network Test"),
+                    QStringLiteral("服务器错误: %1").arg(msg.value(QStringLiteral("message")).toString()));
+            }
+        });
+        connect(m_net, &NetClient::errorOccurred, this, [this](const QString &e) {
+            QMessageBox::warning(this, QStringLiteral("Network Test"),
+                QStringLiteral("连接失败: %1").arg(e));
+        });
+    }
+    m_net->connectToServer(QStringLiteral("127.0.0.1"), 8764);
 }
 
 void Floatee::launchNewInstance()
