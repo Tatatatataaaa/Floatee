@@ -16,9 +16,9 @@
 
 void TeEyes::Loading()
 {
-    QString dataDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/Floatee";
-    QDir().mkpath(dataDir);
-    Path_Data = dataDir + "/teeyes.json";
+    QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(appDataDir);
+    Path_Data = appDataDir + "/teeyes.json";
     Data = JsonOpt::File2Json(Path_Data).object();
     if (Data.empty())
     {
@@ -112,6 +112,11 @@ void TeEyes::timerEvent(QTimerEvent *event)
             State = 1;
             bool embedded = false;
 
+            // Stop interval timer and start duration timer
+            killTimer(Id);
+            Id = startTimer(Duration * 1000);
+            qDebug() << "Duration" << Duration;
+
             if (Reminder)
             {
                 embedded = m_platformInfo->findAndEmbedWindow(
@@ -148,8 +153,6 @@ void TeEyes::timerEvent(QTimerEvent *event)
                 setWindowFlags(windowFlags() | Qt::WindowStaysOnTopHint | Qt::FramelessWindowHint);
                 this->show();
             }
-            Id = startTimer(Duration * 1000);
-            qDebug() << "Duration" << Duration;
         }
     }
 }
@@ -157,6 +160,10 @@ void TeEyes::timerEvent(QTimerEvent *event)
 void TeEyes::Stop()
 {
     State = 0;
+    killTimer(Id);
+    Id = startTimer(Interval * 1000);
+    qDebug() << "Interval" << Interval;
+
     void *extHandle = nullptr;
 
     if (Reminder)
@@ -190,8 +197,6 @@ void TeEyes::Stop()
         }
         this->hide();
     }
-    Id = startTimer(Interval * 1000);
-    qDebug() << "Interval" << Interval;
 }
 
 void TeEyes::keyPressEvent(QKeyEvent *event)
@@ -210,11 +215,9 @@ void TeEyes::keyPressEvent(QKeyEvent *event)
         Pl.append(className);
         qDebug() << Pl;
         Data["List"] = Pl;
-        Id = startTimer(Interval * 1000);
     }
     if (event->key() == Qt::Key_Escape)
     {
         Stop();
-        Id = startTimer(Interval * 1000);
     }
 }

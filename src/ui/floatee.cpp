@@ -31,9 +31,9 @@ static QPixmap eyePixmap(const TeeDrawer &d, int idx) {
 
 void Floatee::Loading()
 {
-    QString dataDir = QCoreApplication::applicationDirPath();
-    QDir().mkpath(dataDir);
-    Path_Setup = dataDir + "/setup.json";
+    QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(appDataDir);
+    Path_Setup = appDataDir + "/setup.json";
     Setup = JsonOpt::File2Json(Path_Setup).object();
     if (!Setup["Setup_Existed"].toBool())
     {
@@ -150,7 +150,7 @@ void Floatee::Initialize()
     }
 
     // ── External skins from local skins/ folder ─────────────────────
-    const QString skinsDir = QCoreApplication::applicationDirPath() + "/skins";
+    const QString skinsDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/skins";
     QDirIterator it(skinsDir, {"*.png"}, QDir::Files);
     bool hasExternal = false;
     while (it.hasNext()) {

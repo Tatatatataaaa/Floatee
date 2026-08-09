@@ -2,6 +2,7 @@
 
 #include <windows.h>
 #include <QDebug>
+#include <string>
 
 class PlatformWindowInfoWin : public PlatformWindowInfo {
 public:
@@ -29,8 +30,12 @@ public:
     bool findAndEmbedWindow(const QString &title, const QString &className,
                              void*& outHandle) override
     {
-        HWND h = FindWindowA(reinterpret_cast<LPCSTR>(className.toStdString().c_str()),
-                              reinterpret_cast<LPCSTR>(title.toStdString().c_str()));
+        std::wstring classW = className.toStdWString();
+        std::wstring titleW = title.toStdWString();
+
+        HWND h = FindWindowW(
+            classW.empty() ? nullptr : reinterpret_cast<LPCWSTR>(classW.c_str()),
+            titleW.empty() ? nullptr : reinterpret_cast<LPCWSTR>(titleW.c_str()));
         if (!h) {
             outHandle = nullptr;
             return false;

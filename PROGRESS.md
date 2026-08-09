@@ -14,11 +14,12 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 
 - 96×96 无边框半透明窗口，显示 T 恤角色，始终置顶
 - 角色皮肤从 `assets/skin/` 通过 Qt 资源系统 (qrc) 加载进内存，无运行时文件依赖
-- 9 个可选皮肤，托盘菜单一键切换，偏好持久化到 `setup.json`
+- 9 个内置皮肤 + 外部 `skins/` 目录动态加载，托盘菜单一键切换
 - **眼睛跟随鼠标**: 眼睛（52×32 画布，双眼镜像）根据鼠标位置追踪移动，有范围限制（15px 半径），靠近时变为笑脸
-- **右键切换表情**: 右键点击切换普通眼 / Clever 眼
+- **眼睛类型**: Normal / Happy / Angry / Clever / Dazed，托盘 Eyes 子菜单切换，右键循环
+- **皮肤颜色调整**: Hue / Saturation / Lightness 三轴滑动条，按皮肤持久化到 `setup.json`
 - 左键拖拽移动角色位置
-- 系统托盘图标常驻，右键菜单含置顶开关、皮肤切换、退出
+- 系统托盘图标常驻，右键菜单含置顶、WSH、护眼、眼睛、皮肤、颜色调整、退出
 
 ### 2. 窗口侧边隐藏 (WindowSideHide)
 
@@ -29,6 +30,7 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - **Windows**: 通过 Win32 API (`GetForegroundWindow`, `QWindow::fromWinId`) 直接操作窗口句柄，动画用 `QPropertyAnimation`
 - **macOS**: 通过 Accessibility API (`AXUIElement`) 获取/设置窗口位置，动画用 `QVariantAnimation`
 - **Linux**: 已禁用（平台不支持此功能）
+- 托盘菜单可勾选启用/禁用
 
 ### 3. 护眼提醒 (TeEyes)
 
@@ -37,7 +39,8 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - 按空格键可标记当前前台窗口标题/类名为豁免（下次不触发）
 - 按 Escape 跳过本次提醒
 - 可在 Windows 上嵌入 Microsoft To Do 窗口
-- 配置存储在 `teeyes.json`，通过 QStandardPaths 写入应用数据目录
+- 配置存储在 `teeyes.json`，通过 `QStandardPaths::GenericDataLocation` 写入应用数据目录
+- 托盘菜单可勾选启用/禁用
 
 ### 4. 跨平台窗口信息 (PlatformWindowInfo)
 
@@ -48,141 +51,29 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 
 ---
 
+## Git 分支状态
+
+- `main`（当前 HEAD `30cb0b4`）：桌面端最新代码
+- `android`（`e9acae6`）：基于 main 的 Android 悬浮窗移植分支
+
+---
+
 ## 最近完成的工作
 
-### 2026-06-19 — macOS .app 打包 & Finder 启动修复
+### 2026-06-30 — 初始提交（`929df33`）
 
-#### 问题
-- 从 Finder 双击启动时崩溃，终端启动正常
-- 根因: `setup.json` / `teeyes.json` 使用相对路径 `"./"` 解析为 CWD。Finder 启动时 CWD 为 `/`（不可写）
-
-#### 修复
-1. **配置文件路径改为绝对路径** (`8a3c2f1`)
-   - `floatee.cpp`: `Path_Setup` 改用 `QStandardPaths::GenericDataLocation + "/Floatee/setup.json"`
-   - `teeyes.cpp`: `Path_Data` 改用 `QStandardPaths::GenericDataLocation + "/Floatee/teeyes.json"`
-   - 所有平台统一存储在 `~/Library/Application Support/Floatee/` (macOS) 或等效路径
-   - `main.cpp`: 设置 `QApplication::setApplicationName("Floatee")` 确保路径一致
-
-2. **macOS .app Bundle 打包** (`8a3c2f1`)
-   - `CMakeLists.txt`: 添加 `MACOSX_BUNDLE TRUE` + bundle 属性 + `configure_file` 生成 Info.plist
-   - `Info.plist.in`: 新建模板，包含 `NSHighResolutionCapable`, `NSPrincipalClass`, `NSAppleEventsUsageDescription`
-   - 构建产物从裸 Mach-O 二进制变为 `Floatee.app/Contents/MacOS/Floatee`
-
-#### 修改文件
-- `src/ui/floatee.h` — Path_Setup 初始化方式变更
-- `src/ui/floatee.cpp` — QStandardPaths + QDir, BodyLabel 渲染
-- `src/ui/teeyes.h` — 添加 Path_Data 成员
-- `src/ui/teeyes.cpp` — QStandardPaths + QDir
-- `src/main.cpp` — setApplicationName
-- `CMakeLists.txt` — MACOSX_BUNDLE 配置
-- `Info.plist.in` — 新建
+- 项目初始版本，已包含：
+  - Floatee 主窗口、托盘、置顶
+  - 眼睛跟随鼠标、右键 Clever 切换
+  - WindowSideHide（Win/macOS）
+  - TeEyes 护眼提醒
+  - PlatformWindowInfo 抽象层（Win/macOS/Linux）
+  - CMake + macOS bundle + `Info.plist.in`
+  - `setup.json` / `teeyes.json` 初始即使用 `QStandardPaths::GenericDataLocation`
 
 ---
 
-### 2026-06-19 — 资源依赖修复
-
-#### 问题
-- 代码依赖 `./Data/Skin.png` 和 `./Data/*.png` 运行时文件，但皮肤实际在 `assets/skin/`
-- 代码在运行时用 `save()` 往硬盘写临时图片文件
-
-#### 修复
-- `Floatee.qrc`: 添加 9 个皮肤文件到 `/skins` 前缀，使用短别名
-- `teedrawer.h/cpp`: 重写加载逻辑，所有 pixmap 从 qrc 加载到内存，移除所有磁盘写入
-- `floatee.cpp`: 用 `QLabel::setPixmap` 替代 stylesheet background-image
-
-#### 修改文件
-- `Floatee.qrc`
-- `src/core/teedrawer.h`
-- `src/core/teedrawer.cpp`
-- `src/ui/floatee.cpp`
-
----
-
-### 2026-06-19 — macOS 构建修复
-
-#### 问题
-- `windowsidehide.cpp` 使用了 `@autoreleasepool` 等 Objective-C 语法但被当作 C++ 编译
-- `AppKit` 头文件缺失导致 `NSEvent`, `NSWorkspace` 等符号未定义
-
-#### 修复
-- `CMakeLists.txt`: 在 `project()` 后添加 `enable_language(OBJCXX)`；对 `windowsidehide.cpp` 设置 `LANGUAGE OBJCXX`
-- `windowsidehide.cpp`: 在 macOS 分支添加 `#import <AppKit/AppKit.h>`
-
-#### 修改文件
-- `CMakeLists.txt`
-- `src/ui/windowsidehide.cpp`
-
----
-
-### 2026-06-20 — 系统托盘菜单 & 始终置顶
-
-#### 问题
-- Tee 窗口置顶开关只能通过手动编辑 `setup.json` 控制，没有 UI 入口
-- macOS 上 `Qt::Tool` 窗口会在应用失去焦点时自动隐藏（点击其他窗口 Tee 消失）
-- `setWindowFlags()` 重建原生窗口导致置顶标志不生效
-
-#### 修复
-1. **系统托盘右键菜单** — 新建 `QMenu`，包含:
-   - "Always on Top" — 可勾选菜单项，点击切换置顶状态
-   - "Quit" — 退出应用
-   - 菜单通过 `QSystemTrayIcon::setContextMenu()` 设置，全平台可用
-
-2. **置顶开关逻辑** — `toggleAlwaysOnTop()` 槽函数:
-   - 用 `setWindowFlag(Qt::WindowStaysOnTopHint, on)` 替代 `setWindowFlags()` — 单标志修改不重建原生窗口
-   - 修改后调用 `show()` 确保生效
-   - 自动保存到 `setup.json` 持久化
-
-3. **macOS Tool 窗口自动隐藏修复**:
-   - 在 `Initialize()` 添加 `setAttribute(Qt::WA_MacAlwaysShowToolWindow, true)` — 禁止 NSPanel 在应用失焦时消失
-   - `teeyes.cpp` 中 `Stop()` 也改用 `setWindowFlag`
-
-#### 修改文件
-- `src/ui/floatee.h` — 添加 TrayMenu, AlwaysOnTopAction, toggleAlwaysOnTop()
-- `src/ui/floatee.cpp` — 托盘菜单构建 + 切换逻辑 + WA_MacAlwaysShowToolWindow
-- `src/ui/teeyes.cpp` — setWindowFlags → setWindowFlag
-
----
-
-## 当前项目结构
-
-```
-Floatee/
-├── CMakeLists.txt              # CMake 构建（含 macOS .app bundle）
-├── Info.plist.in               # macOS Bundle 模板
-├── Floatee.qrc                 # Qt 资源文件（皮肤、保护图）
-├── PROGRESS.md                 # 本文件
-├── assets/
-│   ├── skin/                   # 角色皮肤 PNG（9 个）
-│   └── bg/                     # 护眼背景图
-└── src/
-    ├── main.cpp
-    ├── core/
-    │   ├── jsonopt.h/cpp       # JSON 文件读写工具
-    │   └── teedrawer.h/cpp     # 皮肤精灵切图、眼睛合成、色调变换
-    ├── ui/
-    │   ├── floatee.h/cpp       # 主窗口：宠物角色、拖拽、托盘菜单
-    │   ├── floatee.ui          # Qt Designer 表单
-    │   ├── windowsidehide.h/cpp# 窗口侧边隐藏（Win/macOS 双实现）
-    │   ├── teeyes.h/cpp        # 护眼提醒：定时全屏、窗口豁免
-    │   └── teeyes.ui           # Qt Designer 表单
-    └── platform/
-        ├── platformwindowinfo.h        # 平台抽象接口
-        ├── platformwindowinfo_win.cpp  # Windows 实现
-        ├── platformwindowinfo_mac.mm   # macOS 实现
-        └── platformwindowinfo_x11.cpp  # Linux 实现
-```
-
-## 构建命令
-
-```bash
-cmake -S . -B build_check -DCMAKE_BUILD_TYPE=Release
-cmake --build build_check --config Release
-# 产物: build_check/Floatee.app (macOS) 或 build_check/Floatee.exe (Windows)
-```
-
----
-
-### 2026-06-30 — 皮肤切分标准化修正
+### 2026-06-30 — 皮肤切分标准化修正（`296d54c`）
 
 #### 问题
 - 皮肤图片切分尺寸不合规（如眼睛应为 32×32，实际 ~17×27）
@@ -196,22 +87,33 @@ cmake --build build_check --config Release
    - 生气眼: (96, 96, 32, 32) = G2 区 / 16
    - 笨拙眼: (128, 96, 32, 32) = G3 区 / 16
    - 快乐眼: (160, 96, 32, 32) = G4 区 / 16
-   - 脚掌: (192, 32, 32, 32) = E 区左半 / 16
+   - 脚掌: (192, 32, 64, 32) = E 区 / 16
    - 所有坐标通过比例因子 `sx/sy` 自动适配 512×256 等 2x 皮肤
 
 2. **右眼镜像** — 用 `QTransform::fromScale(-1, 1)` 水平翻转右眼，形成自然的左右对称
 
-3. **显示尺寸调整** — 眼部显示 20×20（从 32×32 源缩放），眼对画布 38×27，脚掌 44×44
+3. **显示尺寸调整** — 眼部显示 32×32，眼对画布 52×32，脚掌 64×32
 
 #### 修改文件
 - `src/core/teedrawer.cpp` — 重写切图逻辑
 
 ---
 
-### 2026-07-01 — 皮肤切换功能
+### 2026-06-30 ~ 2026-07-01 — 眼睛 / 脚掌显示微调
+
+经过多轮提交调整，最终稳定为：
+- 眼睛 QLabel 尺寸 52×32，位置 (24, 28)
+- 眼睛画布 52×32，两眼间距 16px
+- 托盘图标眼睛位置 (30, 28)
+- 脚掌源 `(192, 32, 64, 32)`，显示 64×32，右脚镜像
+- 图层顺序：左脚 (0, 56) → 右脚 (34, 56) → 身体 (0, 0)
+
+---
+
+### 2026-07-01 — 皮肤切换功能（`638623a`）
 
 #### 新增
-- **托盘菜单 Skin 子菜单** — 列出全部 9 个皮肤，QActionGroup 互斥选中，当前皮肤打勾
+- **托盘菜单 Skin 子菜单** — 列出全部 9 个内置皮肤，QActionGroup 互斥选中，当前皮肤打勾
 - 切换时自动更新 BodyLabel、TeeEyes、托盘图标、窗口图标
 - 选择持久化到 `setup.json` 的 `Skin` 字段，启动时自动加载
 - **切换剪影修复** — 切换前 `hide()` 窗口，更新完 `show()`，强制 macOS 丢弃旧 backing store
@@ -222,57 +124,145 @@ cmake --build build_check --config Release
 
 ---
 
-### 2026-07-01 — 眼睛显示修复
+### 2026-07-01 — 托盘菜单扩展
 
-#### 问题
-- 眼睛 QLabel 尺寸 30×27，但眼睛画布已改为 52×32 → 右眼被裁断
-- 后续微调间距和位置
+#### 提交 `b427075` — 新增 WSH / Eye Care 开关
+- 托盘菜单新增 "Window Side Hide" 和 "Eye Care" 可勾选菜单项
+- 点击切换对应模块启用状态，并持久化到 `setup.json`
 
-#### 修复
-- `TeeEyes` QLabel 尺寸 30×27 → 52×32，位置 32,30 → 24,28
-- 鼠标追踪 `setGeometry` 同步更新
-- `mirrored()` → `flipped(Qt::Horizontal)` 消除弃用警告
-- 眼睛初始位置右移 2px (22→24)
+#### 提交 `88fa885` / `0df52b4` / `d01e28f` / `3e69689` — 眼睛子菜单
+- 新增 "Eyes" 子菜单：Normal / Happy / Angry / Clever / Dazed
+- 右键点击循环切换眼睛类型（最终逻辑：循环全部 5 种）
+- 当前眼睛类型持久化到 `setup.json` 的 `Eye` 字段
+- 移除鼠标靠近时的 Happy 自动覆盖，避免与右键循环冲突
+
+---
+
+### 2026-07-01 — Windows 构建优化（`fe7db4b`）
+
+- `CMakeLists.txt`: 设置 `WIN32_EXECUTABLE TRUE`，Windows 启动时不显示控制台窗口
+- MinGW 构建后自动复制 `libstdc++-6.dll`、`libgcc_s_seh-1.dll`、`libwinpthread-1.dll`
+- 镜像方式统一为 `QTransform::fromScale(-1, 1)` 以兼容 Qt 6.7.2
+
+---
+
+### 2026-07-01 — HSL 颜色调整、外部皮肤、Windows 子系统（`30cb0b4`）
+
+#### 新增
+- **Color Adjust 对话框**: Hue (-180~180)、Saturation (0~200%)、Lightness (0~200%)
+  - 实时预览，OK 后按皮肤保存到 `setup.json` 的 `SkinHSL` 字段
+  - Cancel 时回退到原始 HSL
+- **外部皮肤**: 启动时扫描应用目录下 `skins/` 文件夹中的 `*.png`，动态加入 Skin 子菜单
+- **Open Skins Folder** 菜单项：一键打开外部皮肤目录
 
 #### 修改文件
-- `src/ui/floatee.cpp` — QLabel 尺寸、位置、鼠标追踪
-- `src/core/teedrawer.cpp` — 眼睛 x 偏移
+- `src/ui/floatee.h/.cpp` — `openColorDialog()`、外部皮肤扫描
+- `src/core/teedrawer.h/.cpp` — `adjustHsl()`、`load(skin, hue, sat, light)`
+- `CMakeLists.txt` — `WIN32_EXECUTABLE`、MinGW DLL 复制、`Floatee.icns` bundle
+- `Info.plist.in` — 添加 `CFBundleIconFile`
+
+#### 注意
+- 本次提交把 `setup.json` 路径从 `QStandardPaths::GenericDataLocation + "/Floatee"` **改回了 `QCoreApplication::applicationDirPath()`**，以便与外部皮肤目录放在同一位置。
+- `teeyes.json` 仍保留在 `QStandardPaths::GenericDataLocation + "/Floatee"`。
 
 ---
 
-### 2026-07-01 — 脚掌渲染修复
+### 2026-07-02 — Android 移植分支（`e9acae6`）
 
-#### 问题
-- 原提取 32×32 仅为 E 区左半，应为完整 64×32
-- 原 1.375× 缩放 (32→44) 不符合标准比例
-- 右脚未镜像
-- 高分辨率皮肤 (4K/2x) 身体和脚掌未缩放到显示尺寸，只显示左上角碎片
-
-#### 修复
-1. **脚掌源**: `copy(192, 32, 32, 32)` → `copy(192, 32, 64, 32)` — 完整 E 区宽度
-2. **缩放**: 脚掌 44×44 → 64×32（1:1），身体/脚掌均 `.scaled()` 到显示尺寸
-3. **右脚镜像**: `flipped(Qt::Horizontal)`
-4. **位置收紧**: 左脚 (0, 64)，右脚 (32, 64)，适配 64px 宽脚掌
-5. **图层顺序**: 左脚 → 右脚 → 身体（双脚在身体下层）
-
-#### 修改文件
-- `src/core/teedrawer.cpp` — 脚掌源坐标、缩放、镜像、位置
+- 新增 `android` 分支
+- 使用 `SYSTEM_ALERT_WINDOW` 实现悬浮窗
+- 触摸拖拽 + 多触点的眼睛循环
+- 硬编码默认 Tata 皮肤，无皮肤切换
+- 禁用 TeEyes 和 WindowSideHide（桌面端功能）
+- 新增 Android 平台 stub `platformwindowinfo_android.cpp`
 
 ---
 
-### 2026-07-01 — 托盘图标 & 代码清理
+## 当前项目结构
 
-- 托盘图标眼睛右偏 (x 24→30)，与主窗口眼睛位置区分
-- 移除未使用的 `changeHue()`、`cTee`、多余 include
+```
+Floatee/
+├── CMakeLists.txt              # CMake 构建（含 macOS .app bundle / Android）
+├── Info.plist.in               # macOS Bundle 模板
+├── Floatee.qrc                 # Qt 资源文件（皮肤、保护图、主资源）
+├── Floatee.pro                 # qmake 配置（已过期，未维护）
+├── PROGRESS.md                 # 本文件
+├── assets/
+│   ├── skin/                   # 内置角色皮肤 PNG（9 个）
+│   ├── bg/                     # 护眼背景图
+│   ├── main/                   # 历史遗留资源（可能未使用）
+│   └── Floatee.icns            # macOS app 图标
+├── android/                    # Android 移植（android 分支）
+└── src/
+    ├── main.cpp
+    ├── core/
+    │   ├── jsonopt.h/cpp       # JSON 文件读写工具
+    │   └── teedrawer.h/cpp     # 皮肤精灵切图、眼睛合成、HSL 变换
+    ├── ui/
+    │   ├── floatee.h/cpp       # 主窗口：宠物角色、拖拽、托盘菜单、颜色调整
+    │   ├── floatee.ui          # Qt Designer 表单
+    │   ├── windowsidehide.h/cpp# 窗口侧边隐藏（Win/macOS 双实现）
+    │   ├── teeyes.h/cpp        # 护眼提醒：定时全屏、窗口豁免
+    │   └── teeyes.ui           # Qt Designer 表单
+    └── platform/
+        ├── platformwindowinfo.h                # 平台抽象接口
+        ├── platformwindowinfo_win.cpp          # Windows 实现
+        ├── platformwindowinfo_mac.mm           # macOS 实现
+        ├── platformwindowinfo_x11.cpp          # Linux 实现
+        └── platformwindowinfo_android.cpp      # Android stub（android 分支）
+```
+
+## 构建命令
+
+```bash
+# 桌面端
+cmake -S . -B build_check -DCMAKE_BUILD_TYPE=Release
+cmake --build build_check --config Release
+# 产物: build_check/Floatee.app (macOS) 或 build_check/Floatee.exe (Windows)
+
+# Android（需提前配置 Qt Android 工具链和 NDK）
+cmake -S . -B build_android -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
+    -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26
+cmake --build build_android
+```
 
 ---
 
-## 待解决
+## 本次会话修复（2026-08-09）
 
-- [ ] macOS 窗口侧边隐藏：AX API `setAttribute` 对 Apple 原生应用/SwiftUI/Catalyst 无效，需改进（见方案1）
-- [ ] `Floatee.pro` (qmake) 已过期，与 CMake 不同步，可考虑移除
-- [ ] 皮肤文件尚未按 4K 模板标准化（当前部分皮肤元素位置不标准）
+- [x] **统一配置文件路径到 `AppDataLocation`**
+  - `setup.json`、`teeyes.json`、外部皮肤 `skins/` 目录统一放到 `QStandardPaths::AppDataLocation`
+  - 修改文件：`src/ui/floatee.cpp`、`src/ui/teeyes.cpp`
+
+- [x] **修复 `TeEyes` 定时器泄漏**
+  - 切换 Interval / Duration 定时器前先 `killTimer(Id)`
+  - `Stop()` 统一管理定时器重启，`keyPressEvent` 不再重复启动
+  - 修改文件：`src/ui/teeyes.cpp`
+
+- [x] **Windows `findAndEmbedWindow` Unicode 修复**
+  - `FindWindowA` + `reinterpret_cast<LPCSTR>` 改为 `FindWindowW` + `std::wstring`
+  - 避免非 ASCII 窗口标题/类名匹配失败
+  - 修改文件：`src/platform/platformwindowinfo_win.cpp`
+
+## 已知问题 / 待解决
+
+### 中优先级
+
+- [ ] **`Floatee.pro` (qmake) 已过期**
+  - 源文件列表、平台文件、资源文件均与 CMake 不同步
+  - 可考虑移除或同步更新
+
+- [ ] **`assets/main/` 资源可能已废弃**
+  - `eyes.png`、`eyes_clever.png` 等看起来已不被 `teedrawer.cpp` 使用
+  - 需要确认后清理
+
+### 低优先级 / 已记录
+
+- [ ] macOS 窗口侧边隐藏：AX API 对部分 Apple 原生应用/SwiftUI/Catalyst 窗口无效
+- [ ] 皮肤文件尚未完全按 4K 模板标准化（部分皮肤元素位置不标准）
+- [ ] 右脚掌位置 `x=34` + width=64，略微超出 96×96 画布（到 98）
 
 ---
 
-*最后更新: 2026-07-01*
+*最后更新: 2026-08-09*

@@ -4,3 +4,5 @@ build_win/
 *.app
 .DS_Store
 *.user
+extracted/
+build_android/
