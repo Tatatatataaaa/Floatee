@@ -35,8 +35,12 @@ static const QVector<double> kZoomLevels = {
 // geometry + content together on a layered window lets the DWM composite a
 // stale "new geometry + old content" frame for ~100ms (the visible jitter);
 // pure content updates (eyes, emoticons, dragging) are stable.
-static constexpr int kWinW = 192;   // qRound(96 * 2.0)
-static constexpr int kWinH = 275;   // 192 + headroom at 200%
+static constexpr int kWinW = 192;      // qRound(96 * 2.0)
+// Top reserved band for the over-head emoticon: at 200% the bubble needs
+// ceil(41.235 * 2.0) = 83px above the tee. The tee is clamped below this band
+// so the bubble is never clipped by the window's top edge.
+static constexpr int kEmoticonTop = 83;
+static constexpr int kWinH = kWinW + kEmoticonTop;   // 275
 
 void Floatee::Loading()
 {
@@ -88,8 +92,9 @@ void Floatee::Initialize()
     RenderedEye = CurrentEye;
 
     // Fixed-size window: zoom never changes the geometry (see paintEvent).
-    m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0,
-                       (kWinH - ExecTeeDrawer.canvasSize()) / 2.0);
+    // The tee starts horizontally centred and vertically at the bottom, below
+    // the top band reserved for the over-head emoticon (kEmoticonTop).
+    m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
     resize(kWinW, kWinH);
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
@@ -561,15 +566,19 @@ bool Floatee::applySizeScale(double scale, bool anchorAtCursor)
     if (anchorAtCursor) {
         // Normalised anchor inside the (old) tee canvas, then place the new
         // canvas so that same tee point stays under the cursor. Clamp so the
-        // tee never leaves the window entirely.
+        // tee never leaves the window and never enters the top band reserved
+        // for the over-head emoticon (kEmoticonTop) — otherwise the bubble
+        // would be clipped by the window's top edge.
         const QPointF anchorRel = (mouse - (winPos + m_teePos)) / oldCs;
         QPointF newPos = (mouse - winPos) - anchorRel * newCs;
         newPos.setX(qBound(0.0, newPos.x(), double(kWinW - newCs)));
-        newPos.setY(qBound(0.0, newPos.y(), double(kWinH - newCs)));
+        newPos.setY(qBound(double(kEmoticonTop), newPos.y(),
+                           double(kWinH - newCs)));
         m_teePos = newPos;
     } else {
-        // Menu path: centre the tee in the fixed window.
-        m_teePos = QPointF((kWinW - newCs) / 2.0, (kWinH - newCs) / 2.0);
+        // Menu path: horizontally centred, vertically at the bottom below the
+        // emoticon band.
+        m_teePos = QPointF((kWinW - newCs) / 2.0, kEmoticonTop);
     }
 
     RenderedEye = -1;
