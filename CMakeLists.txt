@@ -50,6 +50,7 @@ set(SOURCES
     src/ui/floatee.cpp
     src/ui/teeyes.cpp
     src/ui/windowsidehide.cpp
+    src/ui/emoticonwindow.cpp
     ${PLATFORM_SOURCES}
 )
 
@@ -60,6 +61,7 @@ set(HEADERS
     src/ui/floatee.h
     src/ui/teeyes.h
     src/ui/windowsidehide.h
+    src/ui/emoticonwindow.h
     src/platform/platformwindowinfo.h
 )
 

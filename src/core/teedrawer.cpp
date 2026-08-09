@@ -114,7 +114,7 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
                                bool drawEyes, bool drawFeet,
                                const teer::CAnimState *pAnim)
 {
-    out = QPixmap(CANVAS_SIZE, CANVAS_SIZE);
+    out = QPixmap(m_canvasSize, m_canvasSize);
     out.fill(Qt::transparent);
     m_backend.target = out;
 
@@ -133,7 +133,7 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
     // (no more Floatee "body fills the window" hack).
     teer::vec2 offset;
     teer::CTeeRenderer::GetRenderTeeOffsetToRenderedTee(pAnim, &m_info, offset);
-    const teer::vec2 pos(CANVAS_SIZE / 2.0f, CANVAS_SIZE / 2.0f + offset.y);
+    const teer::vec2 pos(m_canvasSize / 2.0f, m_canvasSize / 2.0f + offset.y);
 
     m_renderer.RenderTee(pAnim, &m_info, mapEye(eyeIdx),
                          teer::vec2(dirX, dirY), pos, 1.0f);
@@ -141,9 +141,57 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
     out = m_backend.target;
 }
 
+// ── Mip-map chain + render scale ───────────────────────────────────────
+
+void TeeDrawer::buildMipChain(const QPixmap &src)
+{
+    m_mips.clear();
+    // Start from a cleanly-low-passed atlas (≤ MIP_MAX_DIM) and halve it down
+    // to MIP_MIN_DIM; each level is a 2× bilinear low-pass of the previous one.
+    QPixmap cur = downscaleToMaxDim(src, MIP_MAX_DIM);
+    while (true) {
+        m_mips.push_back(cur);
+        if (qMax(cur.width(), cur.height()) <= MIP_MIN_DIM)
+            break;
+        cur = cur.scaled(qMax(1, cur.width() / 2), qMax(1, cur.height() / 2),
+                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+}
+
+void TeeDrawer::selectMip()
+{
+    if (m_mips.isEmpty())
+        return;
+    // Body region width at a mip level = 96/256 × atlas width. m_mips is ordered
+    // largest → smallest (index 0 = largest). We want the SMALLEST level whose
+    // body region is still >= the render body size: sampling ratio ≤ 1 (crisp
+    // downscale) while staying as close to 1:1 as possible. Scan from the
+    // smallest level upward so large atlases are not over-sampled (a 1024 atlas
+    // sampled into a 72px body would alias ~5×). If every level is smaller
+    // (zoomed in beyond the chain), fall back to the largest mip (index 0).
+    int best = 0;
+    for (int i = m_mips.size() - 1; i >= 0; --i) {
+        const float bodyPx = (BASE_CANVAS_SIZE * m_mips[i].width()) / 256.0f;
+        if (bodyPx >= m_teeSize) {
+            best = i;
+            break;
+        }
+    }
+    m_backend.registerTexture(SKIN_TEX_ID, m_mips[best]);
+}
+
+void TeeDrawer::setRenderScale(float scale)
+{
+    m_canvasSize = qMax(32, qRound(BASE_CANVAS_SIZE * scale));
+    m_teeSize = BASE_TEE_SIZE * scale;
+    m_info.m_Size = m_teeSize;
+    selectMip();
+}
+
 // ── Public render entry ────────────────────────────────────────────────
 
-void TeeDrawer::render(int eyeIdx, float dirX, float dirY, float walkPhase)
+void TeeDrawer::render(int eyeIdx, float dirX, float dirY, float walkPhase,
+                       float eyeOffsetScale)
 {
     // The complete tee (body + feet + eyes) in tee_render's authentic layout,
     // rendered as a single image. The eyes follow the look direction (dirX/Y),
@@ -159,6 +207,8 @@ void TeeDrawer::render(int eyeIdx, float dirX, float dirY, float walkPhase)
         walkState.Add(&teer::s_aAnimations[teer::ANIM_WALK], walkPhase, 1.0f);
         pAnim = &walkState;
     }
+
+    m_info.m_Skin6EyeOffsetScale = eyeOffsetScale;
     renderToPixmap(Tee, eyeIdx, dirX, dirY, true, true, pAnim);
 }
 
@@ -184,22 +234,20 @@ bool TeeDrawer::load(const QString &skinPath,
     if (hueShift != 0 || satFactor != 1.0 || lightFactor != 1.0)
         SkinFile = adjustHsl(SkinFile, hueShift, satFactor, lightFactor);
 
-    // Build a cleanly-downscaled working atlas (see downscaleToMaxDim) so the
-    // renderer samples from a near-1:1 texture instead of a huge 4K atlas that
-    // would alias. 256×128 already contains all the reference detail.
-    m_workingSkin = downscaleToMaxDim(SkinFile, 256);
+    // Build the mip-map chain (each level a clean 2× low-pass of the previous)
+    // and register the level best matching the current render scale. This is
+    // the CPU analogue of GPU mipmaps: sampling stays near 1:1 so zooming in
+    // or out never aliases (a single bilinear pass from a huge atlas would).
+    buildMipChain(SkinFile);
 
-    // Register the working atlas as texture id 1 in the backend
-    m_backend.registerTexture(SKIN_TEX_ID, m_workingSkin);
-
-    // Configure sprite regions based on the working atlas dimensions
-    // (normalized UVs are resolution-independent, so this matches any skin)
-    configureRegions(static_cast<float>(m_workingSkin.width()),
-                     static_cast<float>(m_workingSkin.height()));
+    // Configure sprite regions (normalized UVs are resolution-independent, so
+    // the same regions are valid for every mip level)
+    configureRegions(static_cast<float>(m_mips.first().width()),
+                     static_cast<float>(m_mips.first().height()));
 
     // Set up render info for protocol-7 six-part skin
     m_info.Reset();
-    m_info.m_Size = TEE_SIZE;
+    setRenderScale(1.0f);   // default: canvas 96, tee 72, picks the best mip
     m_info.m_GotAirJump = true;
 
     teer::SSixupSkin &sixup = m_info.m_aSixup[0];
@@ -216,6 +264,11 @@ bool TeeDrawer::load(const QString &skinPath,
     // Skin6 eye pair mode: two eyes from one texture tile, second mirrored
     m_info.m_Skin6EyePair = true;
     m_info.m_Skin6EyeSeparationScale = 1.0f;
+    // Constant eye spacing regardless of look direction: the host drives the
+    // eye offset from cursor distance, so the stock DDNet convergence term
+    // (which depends on |Dir.x|) would make the spacing wobble with the cursor
+    // (e.g. jump by 0.72px when the cursor crosses the tee centre).
+    m_info.m_Skin6EyeSeparationDirectionScale = 0.0f;
 
     // Initial render with default eye (Normal) looking right
     render(0, 1.0f, 0.0f);

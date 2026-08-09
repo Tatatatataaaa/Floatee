@@ -345,11 +345,11 @@ void CTeeRenderer::RenderTee7(
 							const float h = pInfo->m_Skin6EyePair ?
 								(Emote == EMOTE_BLINK ? BaseSize * 0.15f : BaseSize * 0.40f) * BodyScale.y :
 								(Emote == EMOTE_BLINK ? BaseSize * 0.15f / 2.0f : EyeScale);
-							const vec2 Offset = vec2(Direction.x * 0.125f, -0.05f + Direction.y * 0.10f) * BaseSize;
+							const vec2 Offset = vec2(Direction.x * 0.125f * pInfo->m_Skin6EyeOffsetScale, -0.05f + Direction.y * 0.10f * pInfo->m_Skin6EyeOffsetScale) * BaseSize;
 							const ColorRGBA EyeColor = IsBot ? Sixup.m_BotColor.WithAlpha(Alpha) : Sixup.m_aColors[SKINPART_EYES].WithAlpha(Alpha);
 							if(pInfo->m_Skin6EyePair)
 							{
-								const float EyeSeparation = (0.075f - 0.010f * Abs(Direction.x)) * BaseSize * BodyScale.x * pInfo->m_Skin6EyeSeparationScale;
+								const float EyeSeparation = (0.075f - 0.010f * Abs(Direction.x) * pInfo->m_Skin6EyeSeparationDirectionScale) * BaseSize * BodyScale.x * pInfo->m_Skin6EyeSeparationScale;
 								SubmitQuad(EyesTexture, BodyPos + Offset + vec2(-EyeSeparation, 0.0f), EyeScale * BodyScale.x, h, pAnim->GetBody()->m_Angle * PI * 2 + BodyAngle, EyeColor, U0, V0, U1, V1);
 								SubmitQuad(EyesTexture, BodyPos + Offset + vec2(EyeSeparation, 0.0f), EyeScale * BodyScale.x, h, pAnim->GetBody()->m_Angle * PI * 2 + BodyAngle, EyeColor, U0, V0, U1, V1, true);
 							}

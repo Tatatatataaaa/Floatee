@@ -69,6 +69,16 @@ struct STeeRenderInfo
 	// QmClient formula; increase it when a custom eye artwork has a wider
 	// non-transparent silhouette than the stock skin6 artwork.
 	float m_Skin6EyeSeparationScale;
+	// Multiplier for how far the eyes slide inside the face for a given look
+	// direction. The host can drive this from e.g. cursor distance so the eyes
+	// stay centred while the cursor is on the tee and slide out as it moves
+	// away (Floatee's classic behaviour). 1.0 = stock DDNet travel.
+	float m_Skin6EyeOffsetScale;
+	// How much the eye separation converges with the horizontal look direction
+	// (1.0 = stock DDNet; 0.0 = constant spacing regardless of direction).
+	// Hosts that drive the eye offset from cursor distance usually want 0.0 so
+	// the spacing does not wobble with the (fallback) look direction.
+	float m_Skin6EyeSeparationDirectionScale;
 
 	SSixupSkin m_aSixup[NUM_DUMMIES];
 
@@ -92,6 +102,8 @@ struct STeeRenderInfo
 		m_FeetFlipped = false;
 		m_Skin6EyePair = false;
 		m_Skin6EyeSeparationScale = 1.0f;
+		m_Skin6EyeOffsetScale = 1.0f;
+		m_Skin6EyeSeparationDirectionScale = 1.0f;
 		for(auto &Sixup : m_aSixup)
 			Sixup.Reset();
 	}

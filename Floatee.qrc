@@ -1,13 +1,13 @@
 <RCC>
     <qresource prefix="/main">
-        <file>assets/main/emoticons.png</file>
-        <file>assets/main/ghostjtj.png</file>
-        <file>assets/main/_ghostjtj.png</file>
-        <file>assets/main/eyes.png</file>
-        <file>assets/main/Icon.png</file>
-        <file>assets/main/eyes_clever.png</file>
-        <file>assets/main/eyes_close.png</file>
-        <file>assets/main/eyes_happy.png</file>
+        <file alias="emoticons.png">assets/main/emoticons.png</file>
+        <file alias="ghostjtj.png">assets/main/ghostjtj.png</file>
+        <file alias="_ghostjtj.png">assets/main/_ghostjtj.png</file>
+        <file alias="eyes.png">assets/main/eyes.png</file>
+        <file alias="Icon.png">assets/main/Icon.png</file>
+        <file alias="eyes_clever.png">assets/main/eyes_clever.png</file>
+        <file alias="eyes_close.png">assets/main/eyes_close.png</file>
+        <file alias="eyes_happy.png">assets/main/eyes_happy.png</file>
     </qresource>
     <qresource prefix="/skins">
         <file alias="Tata.png">assets/skin/Tata.png</file>
