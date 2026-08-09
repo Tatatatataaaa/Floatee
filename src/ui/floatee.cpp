@@ -17,14 +17,14 @@
 #include <QVBoxLayout>
 #include <cmath>
 
-static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Clever, 4=Dazed
+static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
 
 static QPixmap eyePixmap(const TeeDrawer &d, int idx) {
     switch (idx) {
     case 1: return d.TeeEyes_Happy;
     case 2: return d.TeeEyes_Angry;
-    case 3: return d.TeeEyes_Clever;
-    case 4: return d.TeeEyes_Dazed;
+    case 3: return d.TeeEyes_Pain;      // UI "Clever"
+    case 4: return d.TeeEyes_Surprise;  // UI "Dazed"
     default: return d.TeeEyes;
     }
 }
@@ -101,7 +101,7 @@ void Floatee::Initialize()
     CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
 
     QVector<QPair<QString, int>> eyeTypes = {
-        {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Clever", 3}, {"Dazed", 4},
+        {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Pain", 3}, {"Surprise", 4},
     };
 
     EyeMenu = new QMenu("Eyes");

@@ -23,8 +23,8 @@ public:
     QPixmap TeeEyes;
     QPixmap TeeEyes_Happy;
     QPixmap TeeEyes_Angry;
-    QPixmap TeeEyes_Dazed;
-    QPixmap TeeEyes_Clever;
+    QPixmap TeeEyes_Surprise; // mapped from UI "Dazed" (tee_render EMOTE_SURPRISE)
+    QPixmap TeeEyes_Pain;     // mapped from UI "Clever" (tee_render EMOTE_PAIN)
     QPixmap TeeEye;
     QPixmap TeeFoot;
 };

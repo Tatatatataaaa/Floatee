@@ -16,7 +16,7 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - 角色皮肤从 `assets/skin/` 通过 Qt 资源系统 (qrc) 加载进内存，无运行时文件依赖
 - 9 个内置皮肤 + 外部 `skins/` 目录动态加载，托盘菜单一键切换
 - **眼睛跟随鼠标**: 眼睛（52×32 画布，双眼镜像）根据鼠标位置追踪移动，有范围限制（15px 半径），靠近时变为笑脸
-- **眼睛类型**: Normal / Happy / Angry / Clever / Dazed，托盘 Eyes 子菜单切换，右键循环
+- **眼睛类型**: Normal / Happy / Angry / Pain / Surprise，托盘 Eyes 子菜单切换，右键循环
 - **皮肤颜色调整**: Hue / Saturation / Lightness 三轴滑动条，按皮肤持久化到 `setup.json`
 - 左键拖拽移动角色位置
 - 系统托盘图标常驻，右键菜单含置顶、WSH、护眼、眼睛、皮肤、颜色调整、退出
@@ -64,7 +64,7 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 
 - 项目初始版本，已包含：
   - Floatee 主窗口、托盘、置顶
-  - 眼睛跟随鼠标、右键 Clever 切换
+  - 眼睛跟随鼠标、右键 Pain 切换
   - WindowSideHide（Win/macOS）
   - TeEyes 护眼提醒
   - PlatformWindowInfo 抽象层（Win/macOS/Linux）
@@ -131,7 +131,7 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - 点击切换对应模块启用状态，并持久化到 `setup.json`
 
 #### 提交 `88fa885` / `0df52b4` / `d01e28f` / `3e69689` — 眼睛子菜单
-- 新增 "Eyes" 子菜单：Normal / Happy / Angry / Clever / Dazed
+- 新增 "Eyes" 子菜单：Normal / Happy / Angry / Pain / Surprise
 - 右键点击循环切换眼睛类型（最终逻辑：循环全部 5 种）
 - 当前眼睛类型持久化到 `setup.json` 的 `Eye` 字段
 - 移除鼠标靠近时的 Happy 自动覆盖，避免与右键循环冲突
