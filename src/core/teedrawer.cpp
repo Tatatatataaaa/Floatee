@@ -114,9 +114,23 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
                                bool drawEyes, bool drawFeet,
                                const teer::CAnimState *pAnim)
 {
-    out = QPixmap(m_canvasSize, m_canvasSize);
-    out.fill(Qt::transparent);
-    m_backend.target = out;
+    // 2×2 supersampling (CPU analogue of MSAA): render into a RENDER_SSAA×
+    // larger canvas with the tee also scaled up, then bilinearly downscale to
+    // the target size. This smooths the alpha edges — small zoom levels look
+    // jaggy because the edge transition spans only 1–2 px, large levels look
+    // smooth because it spans many more.
+    const float renderTee = m_teeSize * RENDER_SSAA;
+    const int renderCs = m_canvasSize * RENDER_SSAA;
+
+    QPixmap big(renderCs, renderCs);
+    big.fill(Qt::transparent);
+    m_backend.target = big;
+
+    const float savedSize = m_info.m_Size;
+    m_info.m_Size = renderTee;
+    // Supersampled render samples a bigger tee → pick a higher-resolution mip
+    // so the upsample stays crisp.
+    selectMip(renderTee);
 
     if (pAnim == nullptr)
         pAnim = teer::CAnimState::GetIdle();
@@ -129,16 +143,59 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
 
     // Authentic tee_render layout: GetRenderTeeOffsetToRenderedTee returns the
     // offset that makes the whole rendered tee (body + feet) center on Pos, so
-    // the tee is centered in the canvas with the feet hanging below the body
-    // (no more Floatee "body fills the window" hack).
+    // the tee is centered in the canvas with the feet hanging below the body.
     teer::vec2 offset;
     teer::CTeeRenderer::GetRenderTeeOffsetToRenderedTee(pAnim, &m_info, offset);
-    const teer::vec2 pos(m_canvasSize / 2.0f, m_canvasSize / 2.0f + offset.y);
+    const teer::vec2 pos(renderCs / 2.0f, renderCs / 2.0f + offset.y);
 
     m_renderer.RenderTee(pAnim, &m_info, mapEye(eyeIdx),
                          teer::vec2(dirX, dirY), pos, 1.0f);
 
     out = m_backend.target;
+    out = out.scaled(m_canvasSize, m_canvasSize,
+                     Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    // Feather the alpha edge so small sizes render with smooth, anti-aliased
+    // outlines instead of hard ~0.5px jaggies (opaque interiors stay crisp).
+    if (m_featherStrength > 0)
+        out = featherAlpha(out, m_featherStrength);
+
+    m_info.m_Size = savedSize;
+}
+
+QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
+{
+    QPixmap cur = src;
+    for (int pass = 0; pass < strength; ++pass) {
+        QImage img = cur.toImage().convertToFormat(QImage::Format_RGBA8888); // non-premultiplied
+        const int w = img.width(), h = img.height();
+        const int stride = img.bytesPerLine();
+        const uchar *bits = img.constBits();
+        QImage out = img.copy();
+        uchar *ob = out.bits();
+        for (int y = 0; y < h; ++y) {
+            for (int x = 0; x < w; ++x) {
+                const uchar *p = bits + y * stride + x * 4;
+                const int a = p[3];
+                if (a == 0 || a == 255)
+                    continue;                // skip interior/fully-transparent
+                // 3×3 box mean of alpha (edge pixel only) — feathered outward.
+                int sum = 0, n = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        const int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || nx >= w || ny < 0 || ny >= h)
+                            continue;
+                        sum += bits[ny * stride + nx * 4 + 3];
+                        ++n;
+                    }
+                }
+                uchar *op = ob + y * stride + x * 4;
+                op[3] = uchar(qMax(a, sum / n)); // grow the edge outward smoothly
+            }
+        }
+        cur = QPixmap::fromImage(out);
+    }
+    return cur;
 }
 
 // ── Mip-map chain + render scale ───────────────────────────────────────
@@ -158,7 +215,7 @@ void TeeDrawer::buildMipChain(const QPixmap &src)
     }
 }
 
-void TeeDrawer::selectMip()
+void TeeDrawer::selectMip(float renderTeeSize)
 {
     if (m_mips.isEmpty())
         return;
@@ -172,7 +229,7 @@ void TeeDrawer::selectMip()
     int best = 0;
     for (int i = m_mips.size() - 1; i >= 0; --i) {
         const float bodyPx = (BASE_CANVAS_SIZE * m_mips[i].width()) / 256.0f;
-        if (bodyPx >= m_teeSize) {
+        if (bodyPx >= renderTeeSize) {
             best = i;
             break;
         }
@@ -185,7 +242,7 @@ void TeeDrawer::setRenderScale(float scale)
     m_canvasSize = qMax(32, qRound(BASE_CANVAS_SIZE * scale));
     m_teeSize = BASE_TEE_SIZE * scale;
     m_info.m_Size = m_teeSize;
-    selectMip();
+    selectMip(m_teeSize);
 }
 
 // ── Public render entry ────────────────────────────────────────────────

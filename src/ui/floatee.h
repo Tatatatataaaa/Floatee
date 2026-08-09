@@ -48,9 +48,13 @@ public:
     QMenu *SkinMenu = nullptr;
     QMenu *EyeMenu = nullptr;
     QMenu *SizeMenu = nullptr;
+    QMenu *FeatherMenu = nullptr;
+    QMenu *InstanceMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
     QActionGroup *EyeGroup = nullptr;
     QActionGroup *SizeGroup = nullptr;
+    QActionGroup *FeatherGroup = nullptr;
+    QActionGroup *InstanceGroup = nullptr;
     QAction *AlwaysOnTopAction = nullptr;
     QAction *WindowSideHideAction = nullptr;
     QAction *TeEyesAction = nullptr;
@@ -59,7 +63,7 @@ public:
     bool MousePress;
 
     // Pet zoom (1.0 = base 96×96 window). Drives TeeDrawer::setRenderScale;
-    // persisted to setup.json "Size".
+    // persisted to default.json "Size".
     double SizeScale = 1.0;
 
     // Tee position INSIDE the fixed-size window (top-left). Zooming re-renders
@@ -103,6 +107,11 @@ public:
 
     QJsonObject Setup;
     QString Path_Setup;
+    // Multi-instance profile from `--profile=<name>` (empty = the default
+    // config). Each profile uses its own default_<name>.json so several
+    // Floatee instances can run side by side with different skins/settings
+    // while the shared skin library (AppDataLocation/skins) stays common to all.
+    QString m_profile;
 
     // Last known activation state; used to refresh the translucent display only
     // when the window really gains/loses focus (filters spurious activation
@@ -118,6 +127,22 @@ protected slots:
     void switchSkin(QAction *action);
     void switchEye(QAction *action);
     void switchSize(QAction *action);
+    void switchFeather(QAction *action);
+    // One-click multi-instance: launch a NEW PROCESS with an auto-generated
+    // unique profile name (no dialog) for quick side-by-side pets.
+    void launchNewInstance();
+    // Launch a new process with a user-chosen profile name (dialog).
+    void openNewInstance();
+    // Open the config directory (AppDataLocation: setup files + shared skins).
+    void openConfigFolder();
+    // (Re)build the Instance submenu: one checkable entry per default*.json in
+    // the config dir (current one checked) + Launch/New Config/Open Folder.
+    void buildInstanceMenu();
+    // Tray action: switch THIS process to the clicked config file.
+    void switchConfig(QAction *action);
+    // Re-apply every setting from the current Setup at runtime (used after
+    // switching the active config file).
+    void applyLiveConfig();
     // Core zoom: applies a scale (resize window + re-render + persist + menu
     // sync) shared by the Size menu and the mouse-wheel zoom. Returns true if
     // the scale actually changed.

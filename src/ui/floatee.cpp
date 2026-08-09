@@ -17,6 +17,10 @@
 #include <QSlider>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
+#include <QInputDialog>
+#include <QLineEdit>
+#include <QProcess>
+#include <QFileInfo>
 #include <cmath>
 
 static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
@@ -46,7 +50,25 @@ void Floatee::Loading()
 {
     QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     QDir().mkpath(appDataDir);
-    Path_Setup = appDataDir + "/setup.json";
+
+    // Multi-instance support: each instance can run with its own config via
+    // `--profile=<name>` (e.g. "Floatee.exe --profile=blue" uses default_blue.json;
+    // no argument → the default default.json). Only letters/digits/-/_ are kept
+    // so a profile can never escape the config directory.
+    QString profile;
+    const QStringList args = QCoreApplication::arguments();
+    for (int i = 1; i < args.size(); ++i) {
+        if (args.at(i).startsWith(QLatin1String("--profile="))) {
+            profile = args.at(i).mid(10).trimmed();
+            break;
+        }
+    }
+    m_profile.clear();
+    for (const QChar &c : profile) {
+        if (c.isLetterOrNumber() || c == QLatin1Char('-') || c == QLatin1Char('_'))
+            m_profile += c;
+    }
+    Path_Setup = appDataDir + "/default" + (m_profile.isEmpty() ? "" : "_" + m_profile) + ".json";
     Setup = JsonOpt::File2Json(Path_Setup).object();
     if (!Setup["Setup_Existed"].toBool())
     {
@@ -84,6 +106,8 @@ void Floatee::Initialize()
     CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
     if (!savedSkin.isEmpty())
         ExecTeeDrawer.load(savedSkin, HueShift, SatFactor, LightFactor);
+    // Apply saved feather strength (edge anti-aliasing) before the first render
+    ExecTeeDrawer.setFeatherStrength(qBound(0, Setup.value("Feather").toInt(1), 2));
     // Apply saved zoom before the first render
     SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
     ExecTeeDrawer.setRenderScale(SizeScale);
@@ -96,6 +120,10 @@ void Floatee::Initialize()
     // the top band reserved for the over-head emoticon (kEmoticonTop).
     m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
     resize(kWinW, kWinH);
+    // Multi-instance: nudge non-default profiles so their window doesn't stack
+    // exactly on top of the default instance (user can drag it anywhere).
+    if (!m_profile.isEmpty())
+        move(QPoint(80, 80));
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
     TrayIcon.setIcon(ExecTeeDrawer.Tee);
@@ -118,7 +146,7 @@ void Floatee::Initialize()
     connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
 
     // ── Eye submenu ──────────────────────────────────────────────────
-    // CurrentEye already loaded from setup.json above
+    // CurrentEye already loaded from default.json above
 
     QVector<QPair<QString, int>> eyeTypes = {
         {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Pain", 3}, {"Surprise", 4},
@@ -150,6 +178,22 @@ void Floatee::Initialize()
         SizeGroup->addAction(action);
     }
     connect(SizeMenu, &QMenu::triggered, this, &Floatee::switchSize);
+
+    // ── Feather submenu (edge anti-aliasing strength) ──────────────
+    FeatherMenu = new QMenu("Feather");
+    FeatherGroup = new QActionGroup(FeatherMenu);
+    FeatherGroup->setExclusive(true);
+    const QVector<QPair<QString, int>> featherOptions = {
+        {"Off", 0}, {"Normal", 1}, {"Strong", 2},
+    };
+    for (const auto &[name, f] : featherOptions) {
+        QAction *action = FeatherMenu->addAction(name);
+        action->setCheckable(true);
+        action->setData(f);
+        action->setChecked(f == ExecTeeDrawer.featherStrength());
+        FeatherGroup->addAction(action);
+    }
+    connect(FeatherMenu, &QMenu::triggered, this, &Floatee::switchFeather);
 
     QAction *colorAction = TrayMenu->addAction("Color Adjust...");
     connect(colorAction, &QAction::triggered, this, &Floatee::openColorDialog);
@@ -211,7 +255,12 @@ void Floatee::Initialize()
 
     TrayMenu->addMenu(EyeMenu);
     TrayMenu->addMenu(SizeMenu);
+    TrayMenu->addMenu(FeatherMenu);
     TrayMenu->addMenu(SkinMenu);
+
+    // ── Instance submenu: configs + multi-instance management ─────
+    buildInstanceMenu();
+
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
     connect(quitAction, &QAction::triggered, qApp, &QApplication::quit);
@@ -542,6 +591,170 @@ void Floatee::switchSize(QAction *action)
 {
     if (applySizeScale(action->data().toDouble()))
         triggerRandomEmoticon();   // size switched (menu path only)
+}
+
+void Floatee::switchFeather(QAction *action)
+{
+    const int f = qBound(0, action->data().toInt(), 2);
+    if (f == ExecTeeDrawer.featherStrength())
+        return;
+    ExecTeeDrawer.setFeatherStrength(f);
+    RenderedEye = -1;
+    updateEyeFollow();           // re-render with the new feather strength
+    TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
+    setWindowIcon(QIcon(ExecTeeDrawer.Tee));
+
+    Setup["Feather"] = f;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::launchNewInstance()
+{
+    // One-click multi-instance: launch a NEW PROCESS with the DEFAULT config
+    // (no --profile → default.json), so users can quickly open another pet
+    // side by side. Creating a fresh profile has its own entry (Custom Profile...).
+    QProcess::startDetached(QCoreApplication::applicationFilePath(), QStringList());
+}
+
+void Floatee::openNewInstance()
+{
+    // Launch a fresh Floatee with its own profile config from the tray menu,
+    // so no command line is needed. Suggest a unique default name; any running
+    // instance can create more (recursive multi-instance).
+    const QString defaultName = QStringLiteral("inst%1")
+                                    .arg(QDateTime::currentMSecsSinceEpoch() % 100000);
+    bool ok = false;
+    const QString name = QInputDialog::getText(
+        this, QStringLiteral("New Floatee Instance"),
+        QStringLiteral("Instance name (letters / digits / - / _):"),
+        QLineEdit::Normal, defaultName, &ok);
+    if (!ok)
+        return;
+    // Sanitize exactly like Loading() so the profile can't escape the config dir.
+    QString clean;
+    for (const QChar &c : name.trimmed()) {
+        if (c.isLetterOrNumber() || c == QLatin1Char('-') || c == QLatin1Char('_'))
+            clean += c;
+    }
+    if (clean.isEmpty())
+        return;
+    QProcess::startDetached(QCoreApplication::applicationFilePath(),
+                            QStringList{QStringLiteral("--profile=") + clean});
+}
+
+void Floatee::openConfigFolder()
+{
+    const QString dir = QFileInfo(Path_Setup).absolutePath();
+    QDir().mkpath(dir);
+    QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+}
+
+void Floatee::buildInstanceMenu()
+{
+    if (!InstanceMenu) {
+        InstanceMenu = new QMenu("Instance");
+        TrayMenu->addMenu(InstanceMenu);
+    }
+    disconnect(InstanceMenu, nullptr, this, nullptr);   // drop stale connections
+    InstanceMenu->clear();
+    delete InstanceGroup;
+    InstanceGroup = new QActionGroup(InstanceMenu);
+    InstanceGroup->setExclusive(true);
+
+    // One checkable entry per config file (both the current default*.json
+    // naming and the legacy setup*.json are listed, so old configs can still
+    // be read/switched without any special handling); the one this process
+    // uses is checked.
+    const QString dir = QFileInfo(Path_Setup).absolutePath();
+    const QString cur = QFileInfo(Path_Setup).fileName();
+    const QStringList files =
+        QDir(dir).entryList({QStringLiteral("default*.json"), QStringLiteral("setup*.json")},
+                            QDir::Files, QDir::Name);
+    if (files.isEmpty())
+        InstanceMenu->addAction(QStringLiteral("(no configs)"))->setEnabled(false);
+    for (const QString &f : files) {
+        QAction *a = InstanceMenu->addAction(f);
+        a->setCheckable(true);
+        a->setData(f);
+        a->setChecked(f == cur);
+        InstanceGroup->addAction(a);
+    }
+
+    InstanceMenu->addSeparator();
+    QAction *launchAction = InstanceMenu->addAction("Launch New Instance");
+    connect(launchAction, &QAction::triggered, this, &Floatee::launchNewInstance);
+    QAction *customAction = InstanceMenu->addAction("Custom Profile...");
+    connect(customAction, &QAction::triggered, this, &Floatee::openNewInstance);
+    QAction *cfgFolderAction = InstanceMenu->addAction("Open Config Folder");
+    connect(cfgFolderAction, &QAction::triggered, this, &Floatee::openConfigFolder);
+    connect(InstanceMenu, &QMenu::triggered, this, &Floatee::switchConfig);
+}
+
+void Floatee::switchConfig(QAction *action)
+{
+    const QString fileName = action->data().toString();
+    if (fileName.isEmpty())
+        return;                    // separator / New Instance / Open Config Folder
+    const QString newPath = QFileInfo(Path_Setup).absolutePath() + "/" + fileName;
+    if (QFileInfo(newPath) == QFileInfo(Path_Setup))
+        return;                    // already using this config
+    // Load the clicked config into THIS process and re-apply all settings.
+    Setup = JsonOpt::File2Json(newPath).object();
+    Path_Setup = newPath;
+    applyLiveConfig();
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));   // ensure the file exists
+    buildInstanceMenu();           // refresh the checkmark
+}
+
+void Floatee::applyLiveConfig()
+{
+    // Re-apply every setting from the current Setup at runtime (used when the
+    // active config file is switched from the Instance menu).
+    const QString skin = Setup.value("Skin").toString();
+    QJsonObject skinHsl = Setup.value("SkinHSL").toObject();
+    QJsonObject hsl = skinHsl.value(skin).toObject();
+    HueShift = hsl.value("HueShift").toInt(0);
+    SatFactor = hsl.value("SatFactor").toDouble(1.0);
+    LightFactor = hsl.value("LightFactor").toDouble(1.0);
+    if (!skin.isEmpty() && QFile::exists(skin)) {
+        CurrentSkin = skin;
+        ExecTeeDrawer.load(skin, HueShift, SatFactor, LightFactor);
+    }
+    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
+    ExecTeeDrawer.setFeatherStrength(qBound(0, Setup.value("Feather").toInt(1), 2));
+    SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
+    ExecTeeDrawer.setRenderScale(SizeScale);
+    m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
+
+    ExecWindowSideHide.Enabled = Setup.value("Enable_WindowSideHide").toBool();
+    ExecTeEyes.Enabled = Setup.value("Enable_TeEyes").toBool();
+    const bool onTop = Setup.value("Always_on_the_Top").toBool();
+    setWindowFlag(Qt::WindowStaysOnTopHint, onTop);
+
+    // Sync tray menu checkmarks
+    if (AlwaysOnTopAction) AlwaysOnTopAction->setChecked(onTop);
+    if (WindowSideHideAction) WindowSideHideAction->setChecked(ExecWindowSideHide.Enabled);
+    if (TeEyesAction) TeEyesAction->setChecked(ExecTeEyes.Enabled);
+    if (SkinGroup) {
+        for (QAction *a : SkinGroup->actions())
+            a->setChecked(a->data().toString() == CurrentSkin);
+    }
+    if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
+        EyeGroup->actions()[CurrentEye]->setChecked(true);
+    if (SizeGroup) {
+        for (QAction *a : SizeGroup->actions())
+            a->setChecked(qFuzzyCompare(a->data().toDouble(), SizeScale));
+    }
+    if (FeatherGroup) {
+        for (QAction *a : FeatherGroup->actions())
+            a->setChecked(a->data().toInt() == ExecTeeDrawer.featherStrength());
+    }
+
+    // Re-render + icons
+    RenderedEye = -1;
+    updateEyeFollow();
+    TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
+    setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 }
 
 bool Floatee::applySizeScale(double scale, bool anchorAtCursor)

@@ -8,6 +8,18 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 
 ---
 
+## 下一阶段：多人联机（规划中）
+
+详细主计划书见 **[MULTIPLAYER_PLAN.md](./MULTIPLAYER_PLAN.md)**。
+
+- **架构**：公网中转服务器（房间管理 + 消息转发，WebSocket/JSON）+ Floatee 客户端（Qt QWebSocket）
+- **目标**：同房间互显多 Tee、皮肤名同步（本地回落 default）、主动表情实时转发、聊天（预留）
+- **多人渲染**：采用**单窗口世界画布**方案（所有 Tee 一个透明窗口绘制，规避本机第二个图层窗口不合成问题）
+- **里程碑**：M0 协议+服务器骨架 → M1 连接+房间UI → M2 多人渲染 → M3 皮肤同步 → M4 表情转发 → M5 聊天打磨
+- **状态**：M0 未开始
+
+---
+
 ## 现有功能
 
 ### 1. 浮动桌面宠物
@@ -324,6 +336,27 @@ cmake --build build_android
     7. **根治方案（当前）**：**窗口几何永不变化**——窗口固定为 200% 档尺寸（192×275），缩放只重渲染 tee 并移动其在窗口内的位置 `m_teePos`（**内容锚定**：鼠标指向的 tee 点保持在其下方），变成纯内容更新，机制上杜绝几何-内容非原子抖动，同时消除"窗口异常位移"。代价：窗口大小不再随缩放变化（缩小后 tee 周围透明区域较大）。`emoticonHeadroom`/`teeTeePos` 辅助函数删除（窗口固定不再需要）。用户确认彻底根治后，**100ms 冷却已移除**（纯内容更新下不再需要限频）
     - **表情顶部截断修复**：固定窗口后内容锚定可能把 tee 移到窗口上部，吃掉表情顶部空间（headroom）导致表情被窗口上边缘裁剪。新增 `kEmoticonTop=83`（200% 时表情最大高度 ceil(41.235·2.0)），tee 垂直 clamp 到 `[kEmoticonTop, kWinH-newCs]`，永不进入顶部预留带；初始/菜单路径 tee 改为水平居中、垂直贴底。表情独立成窗口不可行（本机第二个 WS_EX_LAYERED 窗口不被 DWM 合成，已实证）
   - 重构：核心缩放逻辑提取为 `applySizeScale(double, bool anchorAtCursor=false)`（返回是否真正改变），`switchSize`（菜单，不锚定）与 `zoomSize(step)`（滚轮，锚定光标）共用；滚轮缩放**不**触发随机表情（避免连续滚动刷表情），菜单切换仍触发
+  - 修改文件：`src/ui/floatee.h/.cpp`
+
+- [x] **渲染平滑度优化：SSAA 超采样 + alpha 边缘羽化（小尺寸抗锯齿）**
+  - 现象：小尺寸（如 50%）下皮肤有明显锯齿感，大尺寸平滑——因为大尺寸时 alpha 边缘过渡占更多像素
+  - **SSAA（2×2）**：tee 渲染到 `RENDER_SSAA×` 大画布再双线性缩回（`renderToPixmap`），并按超采样后的渲染尺寸 `selectMip(renderTee)` 选更高分辨率图集——消除形状边缘的像素阶梯（CPU 版 MSAA）
+  - **alpha 羽化 `featherAlpha()`**：缩到目标尺寸后，对半透明边缘像素做 3×3 邻域 alpha 均值（`qMax(原值, 均值)` 向外柔和扩散，内部不透明像素保持清晰）——量化验证（50% 档 48×48）：边缘 alpha 最大调整 SSAA 单独 39 → 加羽化后 **98**，软化像素 130 → **194**，过渡像素 540 → 565，边缘显著变宽变柔
+  - 关键认知：皮肤图集 alpha 边缘本身仅 ~1px 过渡，任何重采样信息守恒，SSAA 单独无法突破（甚至放大渲染会让过渡变窄）——必须在目标分辨率直接生成过渡（羽化）
+  - **羽化强度可配置**：`TeeDrawer::setFeatherStrength(0/1/2)`（0=关、1=3×3 一遍、2=两遍更强），托盘新增 **Feather 子菜单**（Off/Normal/Strong），持久化到 `setup.json["Feather"]`（默认 1），启动时应用；`featherAlpha(src, strength)` 支持多遍
+  - 修改文件：`src/core/teedrawer.h/.cpp`、`src/ui/floatee.h/.cpp`
+
+- [x] **多开支持（--profile 隔离配置，皮肤库共享 + 托盘一键创建）**
+  - main.cpp 本无单例限制，可直接多开；问题在共享 `default.json`（互相覆盖）
+  - **配置文件名规范**：默认配置 `default.json`，独立配置 `default_<名字>.json`（`--profile=blue` → `default_blue.json`）；profile 只保留字母/数字/`-`/`_`，防止路径穿越。**新旧命名兼容**：Instance 菜单同时枚举 `default*.json` 与旧 `setup*.json`，均可读取/切换，无需特殊迁移处理
+  - **托盘一键创建（无需命令行）**：托盘 **Instance 二级菜单**管理多开与配置：
+    - **列出所有配置文件**（`default*.json`，QActionGroup 互斥勾选），**当前进程使用的配置打勾**；点击其他配置 → `switchConfig` 把**当前进程切换到该配置**（`applyLiveConfig` 重新应用皮肤/HSL/眼睛/尺寸/羽化/WSH/TeEyes/置顶/图标并重渲染，同步各菜单勾选）
+    - **"Launch New Instance"**：**一键直接启动新进程，使用默认配置**（无 `--profile` → `default.json`，无对话框），快速多开；**任意实例的托盘都能再创建**（递归多开）。注意：多个默认配置实例共享 `default.json`（会互相覆盖设置），需要独立配置请用 Custom Profile
+    - **"Custom Profile..."**：启动新进程并创建独立配置（弹输入框自定义 profile 名，进阶用法）
+    - **"Open Config Folder"**：打开配置目录（AppDataLocation，含 `default*.json` + 共享 `skins/`）
+  - 皮肤库保持共享（`AppDataLocation/skins` 不按 profile 隔离）——不同实例可用不同皮肤、共用本地皮肤库
+  - 非默认 profile 的窗口初始位置偏移 (80,80)，避免与默认实例完全重叠（可自行拖动）
+  - 验证：命令行双开 2 实例、各自独立配置 ✓；托盘入口编译通过运行正常（GUI 交互由用户实测）
   - 修改文件：`src/ui/floatee.h/.cpp`
 
 ### 平台验证发现（2026-08-09，本机 Windows）
