@@ -30,6 +30,7 @@ export const DEFAULTS = {
   security: {
     maxConnsPerDevice: 1,
     maxNameLen: 32,
+    maxIdLen: 64,      // clientId/deviceId 上限（deviceId 为 36 字符 UUID）
     maxSkinLen: 64,
     maxChatLen: 256,
     maxMessageSize: 8192,

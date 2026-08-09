@@ -52,6 +52,7 @@ set(SOURCES
     src/ui/windowsidehide.cpp
     src/ui/emoticonwindow.cpp
     src/net/netclient.cpp
+    src/multiplayer/multiplayer.cpp
     ${PLATFORM_SOURCES}
 )
 
@@ -64,6 +65,7 @@ set(HEADERS
     src/ui/windowsidehide.h
     src/ui/emoticonwindow.h
     src/net/netclient.h
+    src/multiplayer/multiplayer.h
     src/platform/platformwindowinfo.h
 )
 

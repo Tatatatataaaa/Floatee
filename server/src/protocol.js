@@ -56,7 +56,8 @@ export function validate(msg, cfg) {
 
   switch (type) {
     case MSG.HELLO:
-      return checkStr(msg, 'clientId', cfg) || checkStr(msg, 'deviceId', cfg)
+      // deviceId 是 36 字符 UUID，长度上限单独放宽（maxIdLen）
+      return checkStr(msg, 'clientId', cfg) || checkDeviceId(msg, cfg)
         || checkStr(msg, 'displayName', cfg, true) || ok();
     case MSG.CREATE_ROOM:
       if (msg.roomName !== undefined && !isStr(msg.roomName, cfg.security.maxNameLen)) return fail('bad_field', 'roomName 非法');
@@ -111,6 +112,12 @@ function isStr(v, max) { return typeof v === 'string' && v.length > 0 && v.lengt
 function checkStr(msg, key, cfg, optional = false) {
   if (msg[key] === undefined && optional) return null;
   return isStr(msg[key], cfg.security.maxNameLen) ? null : fail('bad_field', `${key} 非法`);
+}
+function checkDeviceId(msg, cfg) {
+  const v = msg.deviceId;
+  const max = cfg.security.maxIdLen ?? 64;
+  return (typeof v === 'string' && v.length > 0 && v.length <= max)
+    ? null : fail('bad_field', 'deviceId 非法');
 }
 function checkOwnerToken(msg, cfg) {
   return isStr(msg.ownerToken, 64) ? null : fail('bad_field', 'ownerToken 非法');

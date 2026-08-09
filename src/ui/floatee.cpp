@@ -22,6 +22,7 @@
 #include <QProcess>
 #include <QFileInfo>
 #include <QMessageBox>
+#include <QUuid>
 #include <cmath>
 
 static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
@@ -263,10 +264,63 @@ void Floatee::Initialize()
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
 
-    // ── online 分支：网络通信测试入口（连本地服务器 → hello → create_room）──
-    TrayMenu->addSeparator();
-    QAction *netTestAction = TrayMenu->addAction("Network Test...");
-    connect(netTestAction, &QAction::triggered, this, &Floatee::networkTest);
+    // ── online 分支：Multiplayer 子菜单 ──
+    MpMenu = new QMenu("Multiplayer");
+    QAction *mpConnectAction = MpMenu->addAction("Connect...");
+    connect(mpConnectAction, &QAction::triggered, this, &Floatee::mpConnect);
+    QAction *mpDisconnectAction = MpMenu->addAction("Disconnect");
+    connect(mpDisconnectAction, &QAction::triggered, this, &Floatee::mpDisconnect);
+    MpMenu->addSeparator();
+    QAction *mpCreateAction = MpMenu->addAction("Create Room");
+    connect(mpCreateAction, &QAction::triggered, this, &Floatee::mpCreateRoom);
+    QAction *mpJoinAction = MpMenu->addAction("Join Room...");
+    connect(mpJoinAction, &QAction::triggered, this, &Floatee::mpJoinRoom);
+    QAction *mpCodeAction = MpMenu->addAction("Show Join Code");
+    connect(mpCodeAction, &QAction::triggered, this, &Floatee::mpShowJoinCode);
+    QAction *mpListAction = MpMenu->addAction("Room List");
+    connect(mpListAction, &QAction::triggered, this, &Floatee::mpRoomList);
+    MpMenu->addSeparator();
+    MpStatusAction = MpMenu->addAction("Status: 离线");
+    MpStatusAction->setEnabled(false);
+    TrayMenu->addMenu(MpMenu);
+
+    // ── online 分支：联机控制器初始化（deviceId 首次生成并持久化）──
+    {
+        QString deviceId;
+        const QString devFile = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/device.json";
+        const QJsonObject dev = JsonOpt::File2Json(devFile).object();
+        deviceId = dev.value("deviceId").toString();
+        if (deviceId.isEmpty()) {
+            deviceId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+            QJsonObject d;
+            d.insert("deviceId", deviceId);
+            JsonOpt::Json2File(devFile, QJsonDocument(d));
+        }
+        m_multi = new Multiplayer(this);
+        // clientId 需全局唯一：profile + 设备标识前 8 位（不同设备唯一；
+        // 同设备因 maxConnsPerDevice=1 同时仅一个联机连接，不会冲突）
+        const QString clientId = (m_profile.isEmpty() ? QStringLiteral("floatee") : m_profile)
+                                 + QLatin1Char('-') + deviceId.left(8);
+        m_multi->init(clientId, deviceId,
+                      Setup.value("multiplayer").toObject().value("server").toString());
+        connect(m_multi, &Multiplayer::notify, this, [this](const QString &t, const QString &x, bool warn) {
+            if (warn) QMessageBox::warning(this, t, x);
+            else QMessageBox::information(this, t, x);
+        });
+        connect(m_multi, &Multiplayer::statusChanged, this, [this](const QString &s) {
+            if (MpStatusAction) MpStatusAction->setText(s);
+        });
+        connect(m_multi, &Multiplayer::roomListReceived, this, [this](const QList<QJsonObject> &rooms) {
+            QString text;
+            for (const QJsonObject &r : rooms)
+                text += QStringLiteral("%1  %2  (%3/%4)  %5\n")
+                            .arg(r.value("roomId").toString(), r.value("roomName").toString())
+                            .arg(r.value("members").toInt()).arg(r.value("capacity").toInt())
+                            .arg(r.value("public").toBool() ? QStringLiteral("公开") : QStringLiteral("凭证房"));
+            if (text.isEmpty()) text = QStringLiteral("（当前无可加入房间）");
+            QMessageBox::information(this, QStringLiteral("Room List"), text);
+        });
+    }
 
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
@@ -615,43 +669,82 @@ void Floatee::switchFeather(QAction *action)
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
-void Floatee::networkTest()
+// ── online 分支：Multiplayer 托盘菜单 ────────────────────────────────
+
+void Floatee::mpConnect()
 {
-    // online 分支：连本地服务器(TCP 8764) → hello → create_room，弹窗显示结果。
-    if (!m_net) {
-        m_net = new NetClient(this);
-        connect(m_net, &NetClient::connected, this, [this]() {
-            m_net->sendJson(QJsonObject{
-                {QStringLiteral("type"), QStringLiteral("hello")},
-                {QStringLiteral("clientId"), QStringLiteral("floatee-test")},
-                {QStringLiteral("deviceId"), QStringLiteral("floatee-test-device")},
-                {QStringLiteral("displayName"), QStringLiteral("FloateeTest")},
-            });
-        });
-        connect(m_net, &NetClient::messageReceived, this, [this](const QJsonObject &msg) {
-            const QString type = msg.value(QStringLiteral("type")).toString();
-            if (type == QLatin1String("welcome")) {
-                m_net->sendJson(QJsonObject{
-                    {QStringLiteral("type"), QStringLiteral("create_room")},
-                    {QStringLiteral("roomName"), QStringLiteral("floatee-test-room")},
-                });
-            } else if (type == QLatin1String("room_created")) {
-                QMessageBox::information(this, QStringLiteral("Network Test"),
-                    QStringLiteral("已连接服务器并创建房间:\n房间号: %1\n邀请码: %2")
-                        .arg(msg.value(QStringLiteral("roomId")).toString(),
-                             msg.value(QStringLiteral("joinCode")).toString()));
-                m_net->disconnectFromServer();
-            } else if (type == QLatin1String("error")) {
-                QMessageBox::warning(this, QStringLiteral("Network Test"),
-                    QStringLiteral("服务器错误: %1").arg(msg.value(QStringLiteral("message")).toString()));
-            }
-        });
-        connect(m_net, &NetClient::errorOccurred, this, [this](const QString &e) {
-            QMessageBox::warning(this, QStringLiteral("Network Test"),
-                QStringLiteral("连接失败: %1").arg(e));
-        });
+    if (!m_multi) return;
+    const QString cur = Setup.value("multiplayer").toObject()
+                            .value("server").toString(QStringLiteral("127.0.0.1:8764"));
+    bool ok = false;
+    const QString server = QInputDialog::getText(this, QStringLiteral("Connect"),
+        QStringLiteral("服务器地址 (host:port):"), QLineEdit::Normal, cur, &ok);
+    if (!ok || server.trimmed().isEmpty())
+        return;
+    const QString s = server.trimmed();
+    const int colon = s.lastIndexOf(QLatin1Char(':'));
+    QString host = s;
+    quint16 port = 8764;
+    if (colon > 0) {
+        host = s.left(colon);
+        const quint16 p = s.mid(colon + 1).toUShort();
+        port = p != 0 ? p : 8764;
     }
-    m_net->connectToServer(QStringLiteral("127.0.0.1"), 8764);
+    // 记住服务器地址
+    QJsonObject mp = Setup.value("multiplayer").toObject();
+    mp.insert("server", s);
+    Setup.insert("multiplayer", mp);
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+    m_multi->connectTo(host, port);
+}
+
+void Floatee::mpDisconnect()
+{
+    if (m_multi) m_multi->disconnect();
+}
+
+void Floatee::mpCreateRoom()
+{
+    if (!m_multi) return;
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, QStringLiteral("Create Room"),
+        QStringLiteral("房间名（可选，留空则用默认）:"), QLineEdit::Normal, QString(), &ok);
+    if (!ok) return;
+    m_multi->createRoom(name.trimmed());
+}
+
+void Floatee::mpJoinRoom()
+{
+    if (!m_multi) return;
+    bool ok1 = false;
+    const QString rid = QInputDialog::getText(this, QStringLiteral("Join Room"),
+        QStringLiteral("房间号:"), QLineEdit::Normal, QString(), &ok1);
+    if (!ok1 || rid.trimmed().isEmpty())
+        return;
+    bool ok2 = false;
+    const QString code = QInputDialog::getText(this, QStringLiteral("Join Room"),
+        QStringLiteral("邀请码（公开房可留空）:"), QLineEdit::Normal, QString(), &ok2);
+    if (!ok2) return;
+    m_multi->joinRoom(rid.trimmed(), code.trimmed());
+}
+
+void Floatee::mpShowJoinCode()
+{
+    if (!m_multi || !m_multi->inRoom()) {
+        QMessageBox::information(this, QStringLiteral("Multiplayer"),
+                                 QStringLiteral("当前不在房间中"));
+        return;
+    }
+    QMessageBox::information(this, QStringLiteral("Multiplayer"),
+        QStringLiteral("房间号: %1\n邀请码: %2\n（把邀请码分享给朋友即可加入）")
+            .arg(m_multi->roomId(),
+                 m_multi->joinCode().isEmpty() ? QStringLiteral("（非房主，无邀请码）")
+                                               : m_multi->joinCode()));
+}
+
+void Floatee::mpRoomList()
+{
+    if (m_multi) m_multi->listRooms();
 }
 
 void Floatee::launchNewInstance()

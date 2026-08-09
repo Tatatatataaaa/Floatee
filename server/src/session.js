@@ -17,7 +17,10 @@ export function createMessageHandler(store, rooms, config) {
     // 握手
     if (msg.type === MSG.HELLO) {
       const r = rooms.handshake(session, msg);
-      if (!r.ok) session.send({ type: MSG.ERROR, code: r.code, message: r.message });
+      if (!r.ok) {
+        session.send({ type: MSG.ERROR, code: r.code, message: r.message });
+        session.close();   // 握手失败（如 device_busy）直接断开，不留挂起连接
+      }
       return;
     }
 
