@@ -277,6 +277,14 @@ cmake --build build_android
   - 修复：渲染器改为 `w = (BaseSize/1.5) * FeetScale.x`、`h = w/2`，脚掌 2:1 且宽度恢复为纹理自然比例 `BaseSize*2/3`（64×32 @ BaseSize=96），与经典 Floatee 比例一致
   - 修改文件：`tee_render/src/tee_renderer.cpp`、`src/core/teedrawer.cpp`（TeeFoot 裁剪位置）
 
+- [x] **启用 tee_render 的 walk 动画（拖拽行走）**
+  - `TeeDrawer::render()` 新增 `walkPhase` 参数（[0,1) 走一个 walk 循环，<0 为 idle）：`walkState.Set(ANIM_BASE, 0)` + `Add(ANIM_WALK, phase, 1)`，完全按 DDNet 方式驱动
+  - `renderToPixmap` 改为接收 `CAnimState*`，渲染与居中偏移都使用该动画状态
+  - Floatee：拖拽宠物时按水平位置驱动相位（DDNet 公式 `fmod(x,100)/100`），脚掌随拖拽迈步、身体轻微起伏；松手回到 idle
+  - `updateEyeFollow()` 的去重判断加入 walk 相位，避免拖拽时漏渲染
+  - 修改文件：`src/core/teedrawer.h/.cpp`、`src/ui/floatee.h/.cpp`
+  - 验证：walk 0.25/0.75 帧脚掌收窄、身体抬高 1px，与 idle/0/0.5 帧不同
+
 - [x] **tee_render 从 `extracted/` 移到项目根目录**
   - `extracted/tee_render/` → 根目录 `tee_render/`（`extracted/` 仅保留分析脚本、参考皮肤等素材，仍被 gitignore）
   - `CMakeLists.txt`：`add_subdirectory(extracted/tee_render)` → `add_subdirectory(tee_render)`

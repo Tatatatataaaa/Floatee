@@ -23,7 +23,8 @@ public:
     // Render a tee with the given eye type and look direction.
     // eyeIdx: 0=Normal 1=Happy 2=Angry 3=Pain 4=Surprise
     // dir: unit vector pointing where the tee looks (mouse direction)
-    void render(int eyeIdx, float dirX, float dirY);
+    // walkPhase: walk-cycle phase in [0,1), or <0 to use the idle pose.
+    void render(int eyeIdx, float dirX, float dirY, float walkPhase = -1.0f);
 
     QPixmap SkinFile;
     QPixmap Tee;       // full tee (body + feet + eyes), tee_render layout
@@ -48,7 +49,8 @@ private:
     void configureRegions(float skinW, float skinH);
     static teer::EEmote mapEye(int eyeIdx);
     void renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
-                        bool drawEyes, bool drawFeet);
+                        bool drawEyes, bool drawFeet,
+                        const teer::CAnimState *pAnim = nullptr);
 };
 
 #endif // TEEDRAWER_H

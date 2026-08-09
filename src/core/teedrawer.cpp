@@ -111,11 +111,15 @@ void TeeDrawer::configureRegions(float skinW, float skinH)
 // ── Render to a QPixmap ────────────────────────────────────────────────
 
 void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
-                               bool drawEyes, bool drawFeet)
+                               bool drawEyes, bool drawFeet,
+                               const teer::CAnimState *pAnim)
 {
     out = QPixmap(CANVAS_SIZE, CANVAS_SIZE);
     out.fill(Qt::transparent);
     m_backend.target = out;
+
+    if (pAnim == nullptr)
+        pAnim = teer::CAnimState::GetIdle();
 
     // Configure render flags: control which layers are drawn
     int flags = teer::TEE_PREVIEW_LAYER_BODY | teer::TEE_PREVIEW_LAYER_OUTLINE;
@@ -128,11 +132,10 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
     // the tee is centered in the canvas with the feet hanging below the body
     // (no more Floatee "body fills the window" hack).
     teer::vec2 offset;
-    teer::CTeeRenderer::GetRenderTeeOffsetToRenderedTee(
-        teer::CAnimState::GetIdle(), &m_info, offset);
+    teer::CTeeRenderer::GetRenderTeeOffsetToRenderedTee(pAnim, &m_info, offset);
     const teer::vec2 pos(CANVAS_SIZE / 2.0f, CANVAS_SIZE / 2.0f + offset.y);
 
-    m_renderer.RenderTee(teer::CAnimState::GetIdle(), &m_info, mapEye(eyeIdx),
+    m_renderer.RenderTee(pAnim, &m_info, mapEye(eyeIdx),
                          teer::vec2(dirX, dirY), pos, 1.0f);
 
     out = m_backend.target;
@@ -140,12 +143,23 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
 
 // ── Public render entry ────────────────────────────────────────────────
 
-void TeeDrawer::render(int eyeIdx, float dirX, float dirY)
+void TeeDrawer::render(int eyeIdx, float dirX, float dirY, float walkPhase)
 {
     // The complete tee (body + feet + eyes) in tee_render's authentic layout,
     // rendered as a single image. The eyes follow the look direction (dirX/Y),
     // which is driven by the cursor by the host.
-    renderToPixmap(Tee, eyeIdx, dirX, dirY, true, true);
+    //
+    // walkPhase in [0,1) selects the walk cycle (base pose + walk keyframes,
+    // exactly how DDNet drives the feet by movement distance); <0 = idle.
+    const teer::CAnimState *pAnim = teer::CAnimState::GetIdle();
+    teer::CAnimState walkState;
+    if (walkPhase >= 0.0f)
+    {
+        walkState.Set(&teer::s_aAnimations[teer::ANIM_BASE], 0.0f);
+        walkState.Add(&teer::s_aAnimations[teer::ANIM_WALK], walkPhase, 1.0f);
+        pAnim = &walkState;
+    }
+    renderToPixmap(Tee, eyeIdx, dirX, dirY, true, true, pAnim);
 }
 
 // ── Load ────────────────────────────────────────────────────────────────

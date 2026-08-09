@@ -60,6 +60,12 @@ public:
     float LastDirY = 0.0f;
     int RenderedEye = -1;
 
+    // Walk animation: while the tee is dragged the walk-cycle phase in [0,1)
+    // is driven by its horizontal position (DDNet formula fmod(x,100)/100);
+    // -1 = idle pose (not dragging).
+    float WalkPhase = -1.0f;
+    float LastWalkPhase = -1.0f;
+
     WindowSideHide ExecWindowSideHide;
     TeEyes ExecTeEyes;
     TeeDrawer ExecTeeDrawer;

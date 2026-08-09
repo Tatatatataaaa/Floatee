@@ -216,6 +216,11 @@ void Floatee::mousePressEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton) {
         MousePress = true;
         MousePoint = event->globalPosition().toPoint() - this->pos();
+        // Start walking while dragging (phase from horizontal position)
+        WalkPhase = std::fmod(double(this->pos().x()), 100.0) / 100.0f;
+        if (WalkPhase < 0.0f) WalkPhase += 1.0f;
+        LastWalkPhase = -2.0f;   // force re-render
+        updateEyeFollow();
     }
     else if (event->button() == Qt::RightButton) {
         CurrentEye = (CurrentEye + 1) % 5;
@@ -232,6 +237,11 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 {
     if (MousePress) {
         move(event->globalPosition().toPoint() - MousePoint);
+        // Walk-cycle phase follows the horizontal position (DDNet formula).
+        WalkPhase = std::fmod(double(this->pos().x()), 100.0) / 100.0f;
+        if (WalkPhase < 0.0f) WalkPhase += 1.0f;
+        LastWalkPhase = -2.0f;   // force re-render with the new phase
+        updateEyeFollow();
     }
     QMainWindow::mouseMoveEvent(event);
 }
@@ -239,6 +249,9 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
     MousePress = false;
+    WalkPhase = -1.0f;   // stop walking, back to idle
+    LastWalkPhase = -2.0f;
+    updateEyeFollow();
     QMainWindow::mouseReleaseEvent(event);
 }
 
@@ -261,16 +274,18 @@ void Floatee::updateEyeFollow()
     if (eye == 0 && len < 45.0f && d.y() < 0.0f)
         eye = 1;
 
-    // Skip re-render when nothing (eye or direction) changed.
+    // Skip re-render when nothing (eye, direction or walk phase) changed.
     if (eye == RenderedEye &&
         std::abs(dirX - LastDirX) < 0.04f &&
-        std::abs(dirY - LastDirY) < 0.04f)
+        std::abs(dirY - LastDirY) < 0.04f &&
+        std::abs(WalkPhase - LastWalkPhase) < 0.004f)
         return;
 
-    ExecTeeDrawer.render(eye, dirX, dirY);
+    ExecTeeDrawer.render(eye, dirX, dirY, WalkPhase);
     RenderedEye = eye;
     LastDirX = dirX;
     LastDirY = dirY;
+    LastWalkPhase = WalkPhase;
     BodyLabel->setPixmap(ExecTeeDrawer.Tee);
 }
 
