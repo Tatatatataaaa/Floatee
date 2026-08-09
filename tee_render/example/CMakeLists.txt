@@ -1,0 +1,5 @@
+add_executable(tee_render_example main.cpp)
+add_executable(walk_animation walk_animation.cpp)
+
+target_link_libraries(tee_render_example PRIVATE tee_render)
+target_link_libraries(walk_animation PRIVATE tee_render)

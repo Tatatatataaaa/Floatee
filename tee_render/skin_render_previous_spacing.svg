@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="400" viewBox="0 0 960 400">
+<defs>
+<clipPath id="cp0"><rect x="-8.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp1"><rect x="-32.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp2"><rect x="3.20" y="6.40" width="3.20" height="6.40"/></clipPath>
+<clipPath id="cp3"><rect x="3.20" y="6.40" width="3.20" height="6.40"/></clipPath>
+<clipPath id="cp4"><rect x="-8.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp5"><rect x="-32.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp6"><rect x="-6.40" y="6.40" width="3.20" height="6.40"/></clipPath>
+<clipPath id="cp7"><rect x="-6.40" y="6.40" width="3.20" height="6.40"/></clipPath>
+<clipPath id="cp8"><rect x="-7.58" y="-30.32" width="22.74" height="45.48"/></clipPath>
+<clipPath id="cp9"><rect x="-30.32" y="-30.32" width="22.74" height="45.48"/></clipPath>
+<clipPath id="cp10"><rect x="-6.06" y="6.06" width="3.03" height="6.06"/></clipPath>
+<clipPath id="cp11"><rect x="-6.06" y="6.06" width="3.03" height="6.06"/></clipPath>
+<clipPath id="cp12"><rect x="-8.34" y="-33.36" width="25.02" height="50.04"/></clipPath>
+<clipPath id="cp13"><rect x="-33.36" y="-33.36" width="25.02" height="50.04"/></clipPath>
+<clipPath id="cp14"><rect x="-6.67" y="6.67" width="3.34" height="6.67"/></clipPath>
+<clipPath id="cp15"><rect x="-6.67" y="6.67" width="3.34" height="6.67"/></clipPath>
+<clipPath id="cp16"><rect x="-8.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp17"><rect x="-32.00" y="-32.00" width="24.00" height="48.00"/></clipPath>
+<clipPath id="cp18"><rect x="-3.20" y="6.40" width="3.20" height="6.40"/></clipPath>
+<clipPath id="cp19"><rect x="-3.20" y="6.40" width="3.20" height="6.40"/></clipPath>
+</defs>
+<rect x="0" y="0" width="960" height="400" fill="#1b1e2b"/>
+<g transform="translate(160.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp0)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(160.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp1)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(163.84 192.80) rotate(0.00)">
+  <image clip-path="url(#cp2)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(172.16 192.80) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp3)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+  </g>
+</g>
+<g transform="translate(360.00 200.00) rotate(0.00)">
+  <image clip-path="url(#cp4)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(360.00 200.00) rotate(0.00)">
+  <image clip-path="url(#cp5)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(363.84 196.80) rotate(0.00)">
+  <image clip-path="url(#cp6)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(372.16 196.80) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp7)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+  </g>
+</g>
+<g transform="translate(560.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp8)" x="-30.32" y="-30.32" width="60.64" height="60.64" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(560.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp9)" x="-30.32" y="-30.32" width="60.64" height="60.64" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(564.06 192.80) rotate(0.00)">
+  <image clip-path="url(#cp10)" x="-12.13" y="-12.13" width="24.26" height="24.26" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(571.94 192.80) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp11)" x="-12.13" y="-12.13" width="24.26" height="24.26" preserveAspectRatio="none" href="_ghostjtj.png"/>
+  </g>
+</g>
+<g transform="translate(560.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp12)" x="-33.36" y="-33.36" width="66.72" height="66.72" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(560.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp13)" x="-33.36" y="-33.36" width="66.72" height="66.72" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(563.66 192.80) rotate(0.00)">
+  <image clip-path="url(#cp14)" x="-13.34" y="-13.34" width="26.69" height="26.69" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(572.34 192.80) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp15)" x="-13.34" y="-13.34" width="26.69" height="26.69" preserveAspectRatio="none" href="_ghostjtj.png"/>
+  </g>
+</g>
+<g transform="translate(760.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp16)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(760.00 196.00) rotate(0.00)">
+  <image clip-path="url(#cp17)" x="-32.00" y="-32.00" width="64.00" height="64.00" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(747.84 192.80) rotate(0.00)">
+  <image clip-path="url(#cp18)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+</g>
+<g transform="translate(756.16 192.80) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp19)" x="-12.80" y="-12.80" width="25.60" height="25.60" preserveAspectRatio="none" href="_ghostjtj.png"/>
+  </g>
+</g>
+</svg>

@@ -3,6 +3,23 @@
 #include <QtMath>
 #include <algorithm>
 
+// ── Working-atlas helpers ──────────────────────────────────────────────
+
+// Repeatedly halve the pixmap (2× bilinear each step) until its largest side
+// is <= maxDim. Halving in steps acts as a low-pass filter — a cheap CPU
+// substitute for mipmap generation — so that sampling the atlas into the small
+// 96×96 canvas stays near 1:1. A single one-shot bilinear downscale (e.g.
+// 4096→96, ~16× for the body region) aliases badly and produces jaggies.
+static QPixmap downscaleToMaxDim(const QPixmap &src, int maxDim)
+{
+    QPixmap cur = src;
+    while (qMax(cur.width(), cur.height()) > maxDim) {
+        cur = cur.scaled(qMax(1, cur.width() / 2), qMax(1, cur.height() / 2),
+                         Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    }
+    return cur;
+}
+
 // ── HSL adjustment ────────────────────────────────────────────────────
 
 QPixmap TeeDrawer::adjustHsl(const QPixmap &src, int hueShift,
@@ -38,8 +55,97 @@ QPixmap TeeDrawer::adjustHsl(const QPixmap &src, int hueShift,
 // ── Constructor ─────────────────────────────────────────────────────────
 
 TeeDrawer::TeeDrawer(const QString &skinPath)
+    : m_renderer(&m_backend)
 {
     load(skinPath, 0, 1.0, 1.0);
+}
+
+// ── Eye index → tee_render EMOTE mapping ───────────────────────────────
+
+teer::EEmote TeeDrawer::mapEye(int eyeIdx)
+{
+    switch (eyeIdx) {
+    case 1:  return teer::EMOTE_HAPPY;
+    case 2:  return teer::EMOTE_ANGRY;
+    case 3:  return teer::EMOTE_PAIN;
+    case 4:  return teer::EMOTE_SURPRISE;
+    default: return teer::EMOTE_NORMAL;
+    }
+}
+
+// ── Configure sprite regions for the skin atlas ───────────────────────
+// Coordinates are given in the standard 256×128 reference sheet and are
+// scaled to the actual skin dimensions, so this works for both 256×128 and
+// 4K (4096×2048) skins. All regions are always configured; empty regions
+// render as transparent (no effect).
+
+void TeeDrawer::configureRegions(float skinW, float skinH)
+{
+    // Scale from the 256×128 reference sheet to the actual skin atlas.
+    const float sx = skinW / 256.0f;
+    const float sy = skinH / 128.0f;
+    const float TW = skinW, TH = skinH;
+
+    auto region = [&](float x0, float y0, float x1, float y1) {
+        return teer::SSpriteRegion(x0 * sx / TW, y0 * sy / TH,
+                                   x1 * sx / TW, y1 * sy / TH,
+                                   (x1 - x0) * sx, (y1 - y0) * sy);
+    };
+
+    // Body base (A region): top-left
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_BODY, region(0, 0, 96, 96));
+    // Body outline (B region): next 96×96 to the right
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_BODY_OUTLINE, region(96, 0, 192, 96));
+    // Foot base (E region)
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_FOOT, region(192, 32, 256, 64));
+    // Foot outline (F region)
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_FOOT_OUTLINE, region(192, 64, 256, 96));
+    // Eyes (G1~G4 + H)
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_NORMAL,   region(64, 96, 96, 128));
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_ANGRY,    region(96, 96, 128, 128));
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_PAIN,     region(128, 96, 160, 128));
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_HAPPY,    region(160, 96, 192, 128));
+    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_SURPRISE, region(224, 96, 256, 128));
+}
+
+// ── Render to a QPixmap ────────────────────────────────────────────────
+
+void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
+                               bool drawEyes, bool drawFeet)
+{
+    out = QPixmap(CANVAS_SIZE, CANVAS_SIZE);
+    out.fill(Qt::transparent);
+    m_backend.target = out;
+
+    // Configure render flags: control which layers are drawn
+    int flags = teer::TEE_PREVIEW_LAYER_BODY | teer::TEE_PREVIEW_LAYER_OUTLINE;
+    if (drawFeet)  flags |= teer::TEE_PREVIEW_LAYER_FEET;
+    if (drawEyes)  flags |= teer::TEE_PREVIEW_LAYER_EYES;
+    m_info.m_TeeRenderFlags = flags;
+
+    // Authentic tee_render layout: GetRenderTeeOffsetToRenderedTee returns the
+    // offset that makes the whole rendered tee (body + feet) center on Pos, so
+    // the tee is centered in the canvas with the feet hanging below the body
+    // (no more Floatee "body fills the window" hack).
+    teer::vec2 offset;
+    teer::CTeeRenderer::GetRenderTeeOffsetToRenderedTee(
+        teer::CAnimState::GetIdle(), &m_info, offset);
+    const teer::vec2 pos(CANVAS_SIZE / 2.0f, CANVAS_SIZE / 2.0f + offset.y);
+
+    m_renderer.RenderTee(teer::CAnimState::GetIdle(), &m_info, mapEye(eyeIdx),
+                         teer::vec2(dirX, dirY), pos, 1.0f);
+
+    out = m_backend.target;
+}
+
+// ── Public render entry ────────────────────────────────────────────────
+
+void TeeDrawer::render(int eyeIdx, float dirX, float dirY)
+{
+    // The complete tee (body + feet + eyes) in tee_render's authentic layout,
+    // rendered as a single image. The eyes follow the look direction (dirX/Y),
+    // which is driven by the cursor by the host.
+    renderToPixmap(Tee, eyeIdx, dirX, dirY, true, true);
 }
 
 // ── Load ────────────────────────────────────────────────────────────────
@@ -64,85 +170,41 @@ bool TeeDrawer::load(const QString &skinPath,
     if (hueShift != 0 || satFactor != 1.0 || lightFactor != 1.0)
         SkinFile = adjustHsl(SkinFile, hueShift, satFactor, lightFactor);
 
-    // ── Proportional scale factors (base = 256×128 standard sheet) ──
-    double sx = static_cast<double>(SkinFile.width())  / 256.0;
-    double sy = static_cast<double>(SkinFile.height()) / 128.0;
+    // Build a cleanly-downscaled working atlas (see downscaleToMaxDim) so the
+    // renderer samples from a near-1:1 texture instead of a huge 4K atlas that
+    // would alias. 256×128 already contains all the reference detail.
+    m_workingSkin = downscaleToMaxDim(SkinFile, 256);
 
-    auto copy = [&](int x, int y, int w, int h) {
-        return SkinFile.copy(
-            qRound(x * sx), qRound(y * sy),
-            qRound(w * sx), qRound(h * sy));
-    };
+    // Register the working atlas as texture id 1 in the backend
+    m_backend.registerTexture(SKIN_TEX_ID, m_workingSkin);
 
-    // ── Body (head) ─────────────────────────────────────────────────
-    // Standard: top-left 96×96 region  (1536×1536 at 4K → 96×96 at 256)
-    TeeBody = copy(0, 0, 96, 96).scaled(96, 96,
-                                        Qt::KeepAspectRatio,
-                                        Qt::SmoothTransformation);
+    // Configure sprite regions based on the working atlas dimensions
+    // (normalized UVs are resolution-independent, so this matches any skin)
+    configureRegions(static_cast<float>(m_workingSkin.width()),
+                     static_cast<float>(m_workingSkin.height()));
 
-    // ── Eyes ────────────────────────────────────────────────────────
-    // Standard: each eye region is 32×32  (512×512 at 4K → 32×32 at 256)
-    // Right eye = horizontally mirrored left eye (not a copy)
-    //
-    // Eye source positions on a standard 256×128 sheet:
-    //   Normal:  (64, 96)    Angry:  (96, 96)
-    //   Clumsy: (128, 96)    Happy: (160, 96)
-    //
-    // Display: 1:1 from source (32×32 per eye), same as body 96→96
-    // Eye-pair canvas: 52×32, left eye at (0,0), mirrored right at (20,0)
+    // Set up render info for protocol-7 six-part skin
+    m_info.Reset();
+    m_info.m_Size = TEE_SIZE;
+    m_info.m_GotAirJump = true;
 
-    constexpr int kEyeSrcW = 32, kEyeSrcH = 32;
-    constexpr int kEyeDispW = 32, kEyeDispH = 32;
-    constexpr int kEyesCanvasW = 52, kEyesCanvasH = 32;
-    constexpr int kEyePairOffset = 16;
+    teer::SSixupSkin &sixup = m_info.m_aSixup[0];
+    sixup.Reset();
+    // All parts (body, eyes, feet) come from the same skin atlas (texture id 1)
+    sixup.m_aOriginalTextures[teer::SKINPART_BODY] = teer::STextureHandle(SKIN_TEX_ID);
+    sixup.m_aOriginalTextures[teer::SKINPART_FEET] = teer::STextureHandle(SKIN_TEX_ID);
+    sixup.m_aOriginalTextures[teer::SKINPART_EYES] = teer::STextureHandle(SKIN_TEX_ID);
+    // Use white colors (texture provides the actual colors)
+    sixup.m_aColors[teer::SKINPART_BODY] = teer::ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+    sixup.m_aColors[teer::SKINPART_FEET] = teer::ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
+    sixup.m_aColors[teer::SKINPART_EYES] = teer::ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
 
-    auto buildEyes = [&](int srcX, int srcY) {
-        QPixmap eyeSrc  = copy(srcX, srcY, kEyeSrcW, kEyeSrcH);
-        QPixmap eyeLeft = eyeSrc.scaled(kEyeDispW, kEyeDispH,
-                                        Qt::KeepAspectRatio,
-                                        Qt::SmoothTransformation);
-        QPixmap eyeRight = eyeLeft.transformed(QTransform::fromScale(-1, 1));
+    // Skin6 eye pair mode: two eyes from one texture tile, second mirrored
+    m_info.m_Skin6EyePair = true;
+    m_info.m_Skin6EyeSeparationScale = 1.0f;
 
-        QPixmap eyes(kEyesCanvasW, kEyesCanvasH);
-        eyes.fill(Qt::transparent);
-        QPainter p(&eyes);
-        p.drawPixmap(0, 0, eyeLeft);
-        p.drawPixmap(kEyePairOffset, 0, eyeRight);
-        p.end();
-        return eyes;
-    };
-
-    TeeEye         = copy(64, 96, kEyeSrcW, kEyeSrcH);
-    TeeEyes          = buildEyes(64, 96);   // normal
-    TeeEyes_Angry    = buildEyes(96, 96);   // angry
-    TeeEyes_Pain     = buildEyes(128, 96);  // pain (UI shows "Clever")
-    TeeEyes_Happy    = buildEyes(160, 96);  // happy
-    TeeEyes_Surprise = buildEyes(224, 96);  // surprise (UI shows "Dazed")
-
-    // ── Foot ────────────────────────────────────────────────────────
-    // E zone: full 64×32 foot region at standard 256×128
-    QPixmap rawFoot = copy(192, 32, 64, 32);
-    TeeFoot = rawFoot.scaled(64, 32,
-                             Qt::KeepAspectRatio,
-                             Qt::SmoothTransformation);
-    QPixmap rightFoot = TeeFoot.transformed(QTransform::fromScale(-1, 1));
-
-    // ── Compose TeeBare (body + feet, no eyes) ──────────────────────
-    TeeBare = QPixmap(96, 96);
-    TeeBare.fill(Qt::transparent);
-    {
-        QPainter painter(&TeeBare);
-        painter.drawPixmap(0,  56, TeeFoot);    // left foot
-        painter.drawPixmap(0,  0,  TeeBody);    // body on top
-        painter.drawPixmap(34, 56, rightFoot);  // right foot (mirrored)
-    }
-
-    // ── Compose Tee (TeeBare + eyes, for tray/window icon) ──────────
-    Tee = TeeBare;
-    {
-        QPainter painter(&Tee);
-        painter.drawPixmap(30, 28, TeeEyes);   // eyes right for icon view
-    }
+    // Initial render with default eye (Normal) looking right
+    render(0, 1.0f, 0.0f);
 
     return true;
 }

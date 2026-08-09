@@ -1,0 +1,157 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="3840" height="2160" viewBox="0 0 3840 2160">
+<defs>
+<clipPath id="cp0"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp1"><rect x="-32.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp2"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp3"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp4"><rect x="-128.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp5"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp6"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp7"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp8"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp9"><rect x="-32.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp10"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp11"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp12"><rect x="-128.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp13"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp14"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp15"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp16"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp17"><rect x="-32.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp18"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp19"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp20"><rect x="-128.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp21"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp22"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp23"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp24"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp25"><rect x="-32.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp26"><rect x="30.48" y="0.00" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp27"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp28"><rect x="-128.00" y="-128.00" width="96.00" height="192.00"/></clipPath>
+<clipPath id="cp29"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp30"><rect x="12.80" y="25.60" width="12.80" height="25.60"/></clipPath>
+<clipPath id="cp31"><rect x="30.48" y="-30.48" width="30.48" height="30.48"/></clipPath>
+<clipPath id="cp32"><rect x="0.00" y="-38.40" width="19.20" height="19.20"/></clipPath>
+<clipPath id="cp33"><rect x="-44.80" y="-89.60" width="44.80" height="44.80"/></clipPath>
+<clipPath id="cp34"><rect x="64.00" y="-64.00" width="64.00" height="64.00"/></clipPath>
+<clipPath id="cp35"><rect x="64.00" y="64.00" width="64.00" height="64.00"/></clipPath>
+</defs>
+<rect x="0" y="0" width="3840" height="2160" fill="#1b1e2b"/>
+<g transform="translate(548.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp0)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(576.00 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp1)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(604.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp2)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(548.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp3)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(576.00 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp4)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(591.36 1081.20) rotate(0.00)">
+  <image clip-path="url(#cp5)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(624.64 1081.20) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp6)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+  </g>
+</g>
+<g transform="translate(604.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp7)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1442.72 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp8)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1470.72 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp9)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1498.72 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp10)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1442.72 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp11)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1470.72 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp12)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1486.08 1081.20) rotate(0.00)">
+  <image clip-path="url(#cp13)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(1519.36 1081.20) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp14)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+  </g>
+</g>
+<g transform="translate(1498.72 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp15)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2337.44 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp16)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2365.44 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp17)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2393.44 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp18)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2337.44 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp19)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2365.44 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp20)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2380.80 1081.20) rotate(0.00)">
+  <image clip-path="url(#cp21)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(2414.08 1081.20) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp22)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+  </g>
+</g>
+<g transform="translate(2393.44 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp23)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3236.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp24)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3264.00 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp25)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3292.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp26)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3236.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp27)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3264.00 1094.00) rotate(0.00)">
+  <image clip-path="url(#cp28)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3279.36 1081.20) rotate(0.00)">
+  <image clip-path="url(#cp29)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(3312.64 1081.20) rotate(0.00)">
+  <g transform="scale(-1 1)">
+  <image clip-path="url(#cp30)" x="-51.20" y="-51.20" width="102.40" height="102.40" preserveAspectRatio="none" href="hollowknight.png"/>
+  </g>
+</g>
+<g transform="translate(3292.00 1150.00) rotate(0.00)">
+  <image clip-path="url(#cp31)" x="-60.95" y="-60.95" width="121.90" height="121.90" preserveAspectRatio="none" href="hollowknight.png"/>
+</g>
+<g transform="translate(576.00 979.60) rotate(20.45)">
+  <image clip-path="url(#cp32)" x="-38.40" y="-38.40" width="76.80" height="76.80" preserveAspectRatio="none" href="emoticons.png"/>
+</g>
+<g transform="translate(1470.72 928.40) rotate(29.52)">
+  <image clip-path="url(#cp33)" x="-89.60" y="-89.60" width="179.20" height="179.20" preserveAspectRatio="none" href="emoticons.png"/>
+</g>
+<g transform="translate(2365.44 890.00) rotate(4.23)">
+  <image clip-path="url(#cp34)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="emoticons.png"/>
+</g>
+<g transform="translate(3264.00 890.00) rotate(0.00)">
+  <image clip-path="url(#cp35)" x="-128.00" y="-128.00" width="256.00" height="256.00" preserveAspectRatio="none" href="emoticons.png"/>
+</g>
+</svg>

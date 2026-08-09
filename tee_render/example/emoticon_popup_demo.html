@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Emoticon Pop-in Animation Demo</title>
+<style>
+  body {
+    margin: 0;
+    background: #1b1e2b;
+    color: #d8dee9;
+    font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+  }
+  h1 { margin: 24px 0 8px; font-size: 1.25rem; }
+  p.sub { margin: 0 0 20px; color: #a0a8b8; font-size: 0.9rem; }
+  canvas { background: #11131c; border-radius: 8px; box-shadow: 0 8px 30px rgba(0,0,0,0.4); }
+  .legend { display: flex; gap: 24px; margin-top: 16px; font-size: 0.85rem; color: #a0a8b8; flex-wrap: wrap; justify-content: center; }
+  .legend span { white-space: nowrap; }
+  .controls { margin-top: 16px; }
+  button {
+    background: #3b4252;
+    color: #eceff4;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+  }
+  button:hover { background: #4c566a; }
+  label { color: #a0a8b8; font-size: 0.9rem; margin-right: 6px; }
+  select {
+    background: #3b4252;
+    color: #eceff4;
+    border: none;
+    padding: 7px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    margin-right: 12px;
+  }
+</style>
+</head>
+<body>
+<h1>Emoticon Pop-in Animation Demo</h1>
+<p class="sub">完整 Tee（protocol7 皮肤）+ 头顶表情 2 秒生命周期：0.1s 弹出 → 摆动 → 0.2s 淡出</p>
+<canvas id="demo" width="1400" height="520"></canvas>
+<p class="sub">移动鼠标改变第 4 个 Tee 的眼睛方向；勾选 Blink 预览闭眼；勾选 Walk 预览脚部 walk 动画</p>
+<div class="legend">
+    <span>① oop @ 0.03s</span>
+  <span>② exclamation @ 0.07s</span>
+  <span>③ ghost @ 0.12s</span>
+  <span>④ <span id="live-label">exclamation</span> live</span>
+</div>
+<div class="controls">
+  <label for="sprite-select">Live sprite:</label>
+  <select id="sprite-select">
+    <option value="0">oop</option>
+    <option value="1" selected>exclamation</option>
+    <option value="2">hearts</option>
+    <option value="3">drop</option>
+    <option value="4">dotdot</option>
+    <option value="5">music</option>
+    <option value="6">sorry</option>
+    <option value="7">ghost</option>
+    <option value="8">sushi</option>
+    <option value="9">splattee</option>
+    <option value="10">deviltee</option>
+    <option value="11">zomg</option>
+    <option value="12">zzz</option>
+    <option value="13">wtf</option>
+    <option value="14">eyes</option>
+    <option value="15">question</option>
+  </select>
+  <label><input type="checkbox" id="blink"> Blink</label>
+  <label><input type="checkbox" id="walk"> Walk</label>
+  <button id="pause">Pause / Resume</button>
+</div>
+
+<script>
+const canvas = document.getElementById('demo');
+const ctx = canvas.getContext('2d');
+const skinImg = new Image();
+skinImg.src = '../../../data/skins/ghostjtj.png';
+const emoticonsImg = new Image();
+emoticonsImg.src = 'emoticons.png';
+
+const TEE_SIZE = 160;          // rendered tee diameter
+const BASE_SIZE = TEE_SIZE;    // alias matching C++ BaseSize
+const EMOTICON_SIZE = 64;      // authored for a 64px tee
+const SCALE = TEE_SIZE / 64;
+const EYE_SCALE = BASE_SIZE * 0.40;
+const EYE_SEPARATION = 0.075 * BASE_SIZE;
+
+// protocol7 template UV regions in normalized coordinates
+// Works for any skin that follows the standard 2:1 layout
+const SKIN = {
+  body:    { u0: 0.000, v0: 0.000, u1: 0.375, v1: 0.750 },
+  outline: { u0: 0.375, v0: 0.000, u1: 0.750, v1: 0.750 },
+  foot:    { u0: 0.750, v0: 0.250, u1: 1.000, v1: 0.500 },
+  footOut: { u0: 0.750, v0: 0.500, u1: 1.000, v1: 0.750 },
+  eye:     { u0: 0.250, v0: 0.750, u1: 0.375, v1: 1.000 },
+};
+
+const SPRITES = [
+  { name: 'oop',         col: 0, row: 0, frozen: 0.03 },
+  { name: 'exclamation', col: 1, row: 0, frozen: 0.07 },
+  { name: 'ghost',       col: 3, row: 1, frozen: 0.12 },
+  { name: 'question',    col: 3, row: 3, frozen: null },
+];
+
+const GRID_X = 4;
+const GRID_Y = 4;
+
+let running = true;
+let startTime = performance.now();
+let liveSpriteIndex = 1;
+const spriteNames = [
+  'oop', 'exclamation', 'hearts', 'drop', 'dotdot', 'music', 'sorry', 'ghost',
+  'sushi', 'splattee', 'deviltee', 'zomg', 'zzz', 'wtf', 'eyes', 'question'
+];
+
+let mouseX = canvas.width * 0.75;
+let mouseY = canvas.height * 0.3;
+let blink = false;
+let walk = false;
+let walkPhase = 0;
+
+// ---- real animation keyframes (from tee_anim.cpp / datasrc/content.py) ----
+// Each keyframe: { time, x, y, angle }
+const KF = (t, x, y, a) => ({ t, x, y, a });
+const ANIM_BASE = {
+  body: [KF(0, 0, -4, 0)],
+  backFoot: [KF(0, 0, 10, 0)],
+  frontFoot: [KF(0, 0, 10, 0)],
+};
+const ANIM_WALK = {
+  body: [KF(0.0, 0, 0, 0), KF(0.2, 0, -1, 0), KF(0.4, 0, 0, 0),
+         KF(0.6, 0, 0, 0), KF(0.8, 0, -1, 0), KF(1.0, 0, 0, 0)],
+  backFoot: [KF(0.0, 8, 0, 0), KF(0.2, -8, 0, 0), KF(0.4, -10, -4, 0.2),
+             KF(0.6, -8, -8, 0.3), KF(0.8, 4, -4, -0.2), KF(1.0, 8, 0, 0)],
+  frontFoot: [KF(0.0, -10, -4, 0.2), KF(0.2, -8, -8, 0.3), KF(0.4, 4, -4, -0.2),
+              KF(0.6, 8, 0, 0), KF(0.8, 8, 0, 0), KF(1.0, -10, -4, 0.2)],
+};
+
+function evalSeq(seq, time) {
+  if (seq.length === 0) return { x: 0, y: 0, a: 0 };
+  if (seq.length === 1) return { x: seq[0].x, y: seq[0].y, a: seq[0].a };
+  for (let i = 1; i < seq.length; i++) {
+    const f1 = seq[i - 1], f2 = seq[i];
+    if (f1.t <= time && f2.t >= time) {
+      const blend = (time - f1.t) / (f2.t - f1.t);
+      return {
+        x: f1.x + (f2.x - f1.x) * blend,
+        y: f1.y + (f2.y - f1.y) * blend,
+        a: f1.a + (f2.a - f1.a) * blend,
+      };
+    }
+  }
+  const last = seq[seq.length - 1];
+  return { x: last.x, y: last.y, a: last.a };
+}
+
+function addFrame(a, b, amount) {
+  return { x: a.x + b.x * amount, y: a.y + b.y * amount, a: a.a + b.a * amount };
+}
+
+function evalAnimState(time, isWalking) {
+  const base = {
+    body: evalSeq(ANIM_BASE.body, 0),
+    backFoot: evalSeq(ANIM_BASE.backFoot, 0),
+    frontFoot: evalSeq(ANIM_BASE.frontFoot, 0),
+  };
+  if (!isWalking) return base;
+  const walkFrame = {
+    body: evalSeq(ANIM_WALK.body, time),
+    backFoot: evalSeq(ANIM_WALK.backFoot, time),
+    frontFoot: evalSeq(ANIM_WALK.frontFoot, time),
+  };
+  return {
+    body: addFrame(base.body, walkFrame.body, 1),
+    backFoot: addFrame(base.backFoot, walkFrame.backFoot, 1),
+    frontFoot: addFrame(base.frontFoot, walkFrame.frontFoot, 1),
+  };
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+});
+
+function drawTexturedQuad(img, region, x, y, w, h, rotation = 0, flipX = false, alpha = 1) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(rotation);
+  if (flipX) ctx.scale(-1, 1);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(
+    img,
+    region.u0 * img.width, region.v0 * img.height,
+    (region.u1 - region.u0) * img.width, (region.v1 - region.v0) * img.height,
+    -w * 0.5, -h * 0.5, w, h
+  );
+  ctx.restore();
+}
+
+function drawEye(bodyX, bodyY, side, dirX, dirY, bodyRot) {
+  // eye offset from CRenderTools::RenderTee7 (in tee-local space)
+  const ox = dirX * 0.125 * BASE_SIZE + side * EYE_SEPARATION;
+  const oy = (-0.05 + dirY * 0.10) * BASE_SIZE;
+  // rotate by body angle so eyes follow body tilt
+  const cosR = Math.cos(bodyRot), sinR = Math.sin(bodyRot);
+  const x = bodyX + ox * cosR - oy * sinR;
+  const y = bodyY + ox * sinR + oy * cosR;
+  // EMOTE_BLINK: squash NORMAL eye vertically to simulate closed/sleeping eye
+  const h = blink ? BASE_SIZE * 0.15 : EYE_SCALE;
+  drawTexturedQuad(skinImg, SKIN.eye, x, y, EYE_SCALE, h, bodyRot, side > 0);
+}
+
+function spriteAspect(sprite) {
+  const texW = skinImg.naturalWidth || skinImg.width;
+  const texH = skinImg.naturalHeight || skinImg.height;
+  return ((sprite.u1 - sprite.u0) * texW) / ((sprite.v1 - sprite.v0) * texH);
+}
+
+function drawFoot(teeX, teeY, anim, isFront) {
+  // RenderTools uses a square-ish foot quad; here we preserve the sprite aspect
+  const footH = BASE_SIZE / 2.1;
+  const footW = footH * spriteAspect(SKIN.foot);
+  const frame = isFront ? anim.frontFoot : anim.backFoot;
+  const x = teeX + frame.x * SCALE;
+  const y = teeY + frame.y * SCALE;
+  const rot = frame.a * Math.PI * 2;
+  // outline behind foot
+  drawTexturedQuad(skinImg, SKIN.footOut, x, y, footW, footH, rot, false);
+  drawTexturedQuad(skinImg, SKIN.foot,    x, y, footW, footH, rot, false);
+}
+
+function drawTeeFull(x, y, lookDirX, lookDirY, anim) {
+  const bodyX = x + anim.body.x * SCALE;
+  const bodyY = y + anim.body.y * SCALE;
+  const bodyRot = anim.body.a * Math.PI * 2;
+
+  // back feet are drawn BEFORE the body so the body covers them
+  drawFoot(x, y, anim, false);
+
+  // body (outline behind, fill in front)
+  drawTexturedQuad(skinImg, SKIN.outline, bodyX, bodyY, BASE_SIZE, BASE_SIZE, bodyRot);
+  drawTexturedQuad(skinImg, SKIN.body,    bodyX, bodyY, BASE_SIZE, BASE_SIZE, bodyRot);
+
+  // eyes are drawn inside the Filling==1 body block, before the front foot
+  drawEye(bodyX, bodyY, -1, lookDirX, lookDirY, bodyRot);
+  drawEye(bodyX, bodyY,  1, lookDirX, lookDirY, bodyRot);
+
+  // front feet are drawn AFTER the body (and after eyes in the original loop)
+  drawFoot(x, y, anim, true);
+}
+
+function drawEmoticon(sprite, centerX, teeY, elapsed) {
+  const u0 = sprite.col / GRID_X;
+  const v0 = sprite.row / GRID_Y;
+  const u1 = (sprite.col + 1) / GRID_X;
+  const v1 = (sprite.row + 1) / GRID_Y;
+
+  const LIFETIME = 2.0;
+  const POP_IN = 0.1;
+  const FADE_OUT = 0.2;
+  const WIGGLE = 0.2;
+
+  if (elapsed < 0 || elapsed >= LIFETIME) return;
+
+  const fromEnd = LIFETIME - elapsed;
+  let alpha = 1;
+  if (fromEnd < FADE_OUT) alpha = fromEnd / FADE_OUT;
+
+  let h = 1;
+  if (elapsed < POP_IN) h = elapsed / POP_IN;
+
+  let wiggleT = 0;
+  if (elapsed < WIGGLE) wiggleT = elapsed / WIGGLE;
+  const wiggleAngle = Math.sin(5 * wiggleT);
+
+  const size = EMOTICON_SIZE * SCALE * h;
+  const yOffset = (-23 - 32 * h) * SCALE;
+
+  ctx.save();
+  ctx.translate(centerX, teeY + yOffset);
+  ctx.rotate((Math.PI / 6) * wiggleAngle);
+  ctx.globalAlpha = alpha;
+  ctx.drawImage(
+    emoticonsImg,
+    u0 * emoticonsImg.width, v0 * emoticonsImg.height,
+    (u1 - u0) * emoticonsImg.width, (v1 - v0) * emoticonsImg.height,
+    -size * 0.5, -size * 0.5, size, size
+  );
+  ctx.restore();
+}
+
+function frame(now) {
+  if (running) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const elapsedReal = ((now - startTime) / 1000) % 2.0;
+    if (walk) walkPhase = (now / 1000 * 1.2) % 1;
+    const anim = evalAnimState(walkPhase, walk);
+    const spacing = canvas.width / (SPRITES.length + 1);
+    const teeY = canvas.height * 0.58;
+
+    SPRITES.forEach((sprite, i) => {
+      const x = spacing * (i + 1);
+
+      // last tee follows mouse; others look right
+      let dirX = 1, dirY = 0;
+      if (sprite.frozen === null) {
+        const dx = mouseX - x;
+        const dy = mouseY - teeY;
+        const len = Math.hypot(dx, dy) || 1;
+        dirX = dx / len;
+        dirY = dy / len;
+      }
+
+      drawTeeFull(x, teeY, dirX, dirY, anim);
+
+      // emoticon is attached to the body position, not raw tee position
+      const bodyX = x + anim.body.x * SCALE;
+      const bodyY = teeY + anim.body.y * SCALE;
+      let drawSprite = sprite;
+      let t = sprite.frozen !== null ? sprite.frozen : elapsedReal;
+      if (sprite.frozen === null) {
+        drawSprite = { ...sprite, col: liveSpriteIndex % 4, row: Math.floor(liveSpriteIndex / 4) };
+      }
+      drawEmoticon(drawSprite, bodyX, bodyY, t);
+
+      ctx.fillStyle = '#a0a8b8';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      const label = sprite.frozen !== null
+        ? `${sprite.name} @ ${sprite.frozen.toFixed(2)}s`
+        : `${spriteNames[liveSpriteIndex]} live t=${elapsedReal.toFixed(2)}s`;
+      ctx.fillText(label, x, teeY + BASE_SIZE * 0.5 + 28);
+    });
+  }
+  requestAnimationFrame(frame);
+}
+
+document.getElementById('pause').addEventListener('click', () => {
+  running = !running;
+  if (running) startTime = performance.now() - (startTimePausedAt || 0);
+  else startTimePausedAt = performance.now() - startTime;
+});
+
+document.getElementById('sprite-select').addEventListener('change', (e) => {
+  liveSpriteIndex = parseInt(e.target.value, 10);
+  document.getElementById('live-label').textContent = spriteNames[liveSpriteIndex];
+});
+
+document.getElementById('blink').addEventListener('change', (e) => {
+  blink = e.target.checked;
+});
+
+document.getElementById('walk').addEventListener('change', (e) => {
+  walk = e.target.checked;
+});
+let startTimePausedAt = 0;
+
+let loaded = 0;
+function onAssetLoad() {
+  loaded++;
+  if (loaded === 2) requestAnimationFrame(frame);
+}
+skinImg.onload = onAssetLoad;
+emoticonsImg.onload = onAssetLoad;
+skinImg.onerror = () => {
+  ctx.fillStyle = '#bf616a';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Failed to load skin image', 20, 40);
+};
+emoticonsImg.onerror = () => {
+  ctx.fillStyle = '#bf616a';
+  ctx.font = '16px sans-serif';
+  ctx.fillText('Failed to load emoticons.png (must be in the same folder as this HTML)', 20, 60);
+};
+</script>
+</body>
+</html>

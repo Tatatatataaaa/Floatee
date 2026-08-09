@@ -32,32 +32,11 @@ class Floatee : public QMainWindow
 public:
     Floatee(QWidget *parent = nullptr);
     ~Floatee();
-    QRect GetTeePos();
     void Loading();
     void Initialize();
     void mousePressEvent(QMouseEvent *event);
     void mouseMoveEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
-
-    class Eyes : public QLabel
-    {
-        public:
-        void MouseMoveEvent(QMouseEvent *e);
-        Eyes(QWidget *parent = nullptr) : QLabel(parent)
-        {
-            setMouseTracking(true);
-            QTimer *cursorTimer = new QTimer(this);
-            connect(cursorTimer, &QTimer::timeout, this, [this]() {
-                QPoint globalPos = QCursor::pos();
-                QMouseEvent fakeEvent(QEvent::MouseMove,
-                    mapFromGlobal(globalPos),
-                    globalPos, Qt::NoButton, Qt::NoButton, Qt::NoModifier);
-                MouseMoveEvent(&fakeEvent);
-            });
-            cursorTimer->start(16);
-        }
-        ~Eyes() {}
-    } TeeEyes;
 
     QSystemTrayIcon TrayIcon;
     QMenu *TrayMenu = nullptr;
@@ -70,9 +49,16 @@ public:
     QAction *TeEyesAction = nullptr;
     QLabel *BodyLabel = nullptr;
     QString CurrentSkin;
-    QRect EyesPos;
     QPoint MousePoint;
     bool MousePress;
+
+    // Cursor-driven eye follow (tee_render layout): the full tee is re-rendered
+    // with the look direction pointing at the cursor, so the eyes slide inside
+    // the face — the authentic tee_render behaviour replaces the old eye QLabel.
+    QTimer *EyeFollowTimer = nullptr;
+    float LastDirX = 1.0f;
+    float LastDirY = 0.0f;
+    int RenderedEye = -1;
 
     WindowSideHide ExecWindowSideHide;
     TeEyes ExecTeEyes;
@@ -92,6 +78,7 @@ protected slots:
     void switchSkin(QAction *action);
     void switchEye(QAction *action);
     void openColorDialog();
+    void updateEyeFollow();
 
 private:
     Ui::Floatee *ui;

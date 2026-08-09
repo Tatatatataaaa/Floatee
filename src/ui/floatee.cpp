@@ -19,16 +19,6 @@
 
 static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
 
-static QPixmap eyePixmap(const TeeDrawer &d, int idx) {
-    switch (idx) {
-    case 1: return d.TeeEyes_Happy;
-    case 2: return d.TeeEyes_Angry;
-    case 3: return d.TeeEyes_Pain;      // UI "Clever"
-    case 4: return d.TeeEyes_Surprise;  // UI "Dazed"
-    default: return d.TeeEyes;
-    }
-}
-
 void Floatee::Loading()
 {
     QString appDataDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
@@ -68,15 +58,19 @@ void Floatee::Initialize()
     HueShift = hsl.value("HueShift").toInt(0);
     SatFactor = hsl.value("SatFactor").toDouble(1.0);
     LightFactor = hsl.value("LightFactor").toDouble(1.0);
+    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
     if (!savedSkin.isEmpty())
         ExecTeeDrawer.load(savedSkin, HueShift, SatFactor, LightFactor);
+    ExecTeeDrawer.render(CurrentEye, 1.0f, 0.0f);
+    LastDirX = 1.0f; LastDirY = 0.0f;
+    RenderedEye = CurrentEye;
 
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
     BodyLabel = new QLabel(this);
     BodyLabel->setGeometry(0, 0, 96, 96);
     BodyLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
-    BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
+    BodyLabel->setPixmap(ExecTeeDrawer.Tee);
 
     TrayIcon.setIcon(ExecTeeDrawer.Tee);
     TrayIcon.setToolTip("Floatee");
@@ -98,7 +92,7 @@ void Floatee::Initialize()
     connect(TeEyesAction, &QAction::triggered, this, &Floatee::toggleTeEyes);
 
     // ── Eye submenu ──────────────────────────────────────────────────
-    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
+    // CurrentEye already loaded from setup.json above
 
     QVector<QPair<QString, int>> eyeTypes = {
         {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Pain", 3}, {"Surprise", 4},
@@ -188,13 +182,13 @@ void Floatee::Initialize()
     ExecTeEyes.Tee = this;
     ExecWindowSideHide.Tee = this;
 
-    TeeEyes.setParent(this);
-    TeeEyes.resize(52, 32);
-    TeeEyes.move(24, 28);
-    TeeEyes.setAttribute(Qt::WA_TransparentForMouseEvents);
-    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
-    TeeEyes.raise();
-    TeeEyes.show();
+    // Cursor-driven eye follow: re-render the full tee with the look direction
+    // pointing at the cursor (the pipeline draws the eyes on the body, so there
+    // is no separate eye QLabel anymore).
+    EyeFollowTimer = new QTimer(this);
+    EyeFollowTimer->setInterval(16);
+    connect(EyeFollowTimer, &QTimer::timeout, this, &Floatee::updateEyeFollow);
+    EyeFollowTimer->start();
 
     if (Setup["Always_on_the_Top"].toBool())
     {
@@ -217,11 +211,6 @@ Floatee::~Floatee()
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
-QRect Floatee::GetTeePos()
-{
-    return geometry();
-}
-
 void Floatee::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
@@ -230,7 +219,8 @@ void Floatee::mousePressEvent(QMouseEvent *event)
     }
     else if (event->button() == Qt::RightButton) {
         CurrentEye = (CurrentEye + 1) % 5;
-        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        RenderedEye = -1;             // force re-render with the new eye
+        updateEyeFollow();
         // Sync menu checkmark
         if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
             EyeGroup->actions()[CurrentEye]->setChecked(true);
@@ -252,58 +242,36 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
     QMainWindow::mouseReleaseEvent(event);
 }
 
-void Floatee::Eyes::MouseMoveEvent(QMouseEvent *e)
+void Floatee::updateEyeFollow()
 {
-    QPointF pG = e->globalPosition();
-    Floatee *parentTee = static_cast<Floatee*>(parent());
-    QRect TeePos = parentTee->GetTeePos();
-    int dx = pG.x() - TeePos.x() - 57;
-    int dy = pG.y() - TeePos.y() - 44;
-    if (CurrentEye == 0)
-    {
-        if (std::abs(dx) <= 30 && dy >= -30 && dy <= 0)
-            setPixmap(parentTee->ExecTeeDrawer.TeeEyes_Happy);
-        else
-            setPixmap(parentTee->ExecTeeDrawer.TeeEyes);
+    // Look direction: from the tee window center toward the cursor.
+    const QPoint g = QCursor::pos();
+    const QPointF c = geometry().center();
+    QPointF d = QPointF(g) - c;
+    const float len = std::hypot(d.x(), d.y());
+    float dirX = 1.0f, dirY = 0.0f;
+    if (len > 1.0f) {
+        dirX = d.x() / len;
+        dirY = d.y() / len;
     }
-    int t = 0;
-    if (dx > 0)
-        for (; dx > 0; t++)
-            dx -= t * 12;
-    else
-        for (; dx < 0; t--)
-            dx -= t * 12;
-    dx = t;
-    t = 0;
-    if (dy > 0)
-        for (; dy > 0; t++)
-            dy -= t * 8;
-    else
-        for (; dy < 0; t--)
-            dy -= t * 8;
-    dy = t;
 
-    dx = std::min(dx, 15);
-    dx = std::max(dx, -15);
-    dy = std::min(dy, 15);
-    dy = std::max(dy, -15);
-    double l = std::sqrt(dx * dx + dy * dy);
-    if (l > 15)
-    {
-        dx = dx * 15 / l;
-        dy = dy * 15 / l;
-    }
-    dy = dy * 2 / 3;
-    if (dx >= 15)
-        dx--;
-    if (dx <= -15)
-        dx++;
-    if (dy == 10)
-        dy--;
-    if (dy == -10)
-        dy++;
+    int eye = CurrentEye;
+    // Classic Floatee behaviour: when the cursor hovers near the top of the tee
+    // and the default eyes are active, switch to a happy face.
+    if (eye == 0 && len < 45.0f && d.y() < 0.0f)
+        eye = 1;
 
-    setGeometry(24 + dx, 28 + dy, 52, 32);
+    // Skip re-render when nothing (eye or direction) changed.
+    if (eye == RenderedEye &&
+        std::abs(dirX - LastDirX) < 0.04f &&
+        std::abs(dirY - LastDirY) < 0.04f)
+        return;
+
+    ExecTeeDrawer.render(eye, dirX, dirY);
+    RenderedEye = eye;
+    LastDirX = dirX;
+    LastDirY = dirY;
+    BodyLabel->setPixmap(ExecTeeDrawer.Tee);
 }
 
 void Floatee::on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason)
@@ -364,8 +332,8 @@ void Floatee::switchSkin(QAction *action)
     if (wasVisible)
         hide();
 
-    BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
-    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+    RenderedEye = -1;
+    updateEyeFollow();   // re-renders the full tee with current eye + cursor dir
     TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
     setWindowIcon(QIcon(ExecTeeDrawer.Tee));
 
@@ -383,7 +351,8 @@ void Floatee::switchEye(QAction *action)
         return;
 
     CurrentEye = idx;
-    TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+    RenderedEye = -1;
+    updateEyeFollow();
 
     Setup["Eye"] = idx;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
@@ -427,8 +396,8 @@ void Floatee::openColorDialog()
         double s = satSlider->value() / 100.0;
         double l = lightSlider->value() / 100.0;
         ExecTeeDrawer.load(CurrentSkin, h, s, l);
-        BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
-        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        RenderedEye = -1;
+        updateEyeFollow();
         TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
         setWindowIcon(QIcon(ExecTeeDrawer.Tee));
     };
@@ -451,8 +420,8 @@ void Floatee::openColorDialog()
     if (dlg.exec() != QDialog::Accepted) {
         // Revert to original
         ExecTeeDrawer.load(CurrentSkin, origHue, origSat, origLight);
-        BodyLabel->setPixmap(ExecTeeDrawer.TeeBare);
-        TeeEyes.setPixmap(eyePixmap(ExecTeeDrawer, CurrentEye));
+        RenderedEye = -1;
+        updateEyeFollow();
         TrayIcon.setIcon(QIcon(ExecTeeDrawer.Tee));
         setWindowIcon(QIcon(ExecTeeDrawer.Tee));
         return;

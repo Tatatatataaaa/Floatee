@@ -15,7 +15,7 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - 96×96 无边框半透明窗口，显示 T 恤角色，始终置顶
 - 角色皮肤从 `assets/skin/` 通过 Qt 资源系统 (qrc) 加载进内存，无运行时文件依赖
 - 9 个内置皮肤 + 外部 `skins/` 目录动态加载，托盘菜单一键切换
-- **眼睛跟随鼠标**: 眼睛（52×32 画布，双眼镜像）根据鼠标位置追踪移动，有范围限制（15px 半径），靠近时变为笑脸
+- **眼睛跟随鼠标**: 眼睛由 tee_render 管线直接渲染在身体上（随光标方向在脸部内滑动），靠近时变为笑脸
 - **眼睛类型**: Normal / Happy / Angry / Pain / Surprise，托盘 Eyes 子菜单切换，右键循环
 - **皮肤颜色调整**: Hue / Saturation / Lightness 三轴滑动条，按皮肤持久化到 `setup.json`
 - 左键拖拽移动角色位置
@@ -193,11 +193,13 @@ Floatee/
 │   ├── main/                   # 历史遗留资源（可能未使用）
 │   └── Floatee.icns            # macOS app 图标
 ├── android/                    # Android 移植（android 分支）
+├── tee_render/                 # DDNet 渲染管线移植（ITeeRenderBackend 抽象，C++17）
 └── src/
     ├── main.cpp
     ├── core/
     │   ├── jsonopt.h/cpp       # JSON 文件读写工具
-    │   └── teedrawer.h/cpp     # 皮肤精灵切图、眼睛合成、HSL 变换
+    │   ├── teedrawer.h/cpp     # tee_render 渲染驱动：身体/脚/眼睛合成、HSL 变换
+    │   └── tee_qt_backend.h/cpp# tee_render 的 Qt 软件光栅后端（QPainter 绘制 quad）
     ├── ui/
     │   ├── floatee.h/cpp       # 主窗口：宠物角色、拖拽、托盘菜单、颜色调整
     │   ├── floatee.ui          # Qt Designer 表单
@@ -245,6 +247,51 @@ cmake --build build_android
   - 避免非 ASCII 窗口标题/类名匹配失败
   - 修改文件：`src/platform/platformwindowinfo_win.cpp`
 
+- [x] **皮肤渲染替换为 tee_render 管线**
+  - 引入 `tee_render/`（DDNet/QmClient 渲染管线 C++17 移植，`ITeeRenderBackend` 抽象）
+  - 新增 `src/core/tee_qt_backend.h/.cpp`：Qt 软件光栅后端，用 `QPainter` 把 quad 绘制到 QPixmap
+  - 重写 `src/core/teedrawer.cpp`：内部使用 `CTeeRenderer`，`configureRegions()` 按 256×128 参考系配置身体/轮廓/脚/眼睛精灵区域，`TeeBare/Tee/TeeEyes...` 等对外 QPixmap 接口不变
+  - `CMakeLists.txt`：`add_subdirectory(tee_render)` + 链接 `tee_render`，MSVC 加 `/Zc:__cplusplus` 与 `NOMINMAX`
+  - 眼睛/轮廓区域始终启用（用户决定），空区域渲染为透明、无副作用
+
+- [x] **修复眼睛偏右 + Tee 变小（tee_render 视觉回归）**
+  - 根因 1（偏右）：tee_render 眼睛带方向偏移 `Dir.x*0.125*BaseSize`，且旧裁剪窗口 `(22,28,52,32)` 为猜测值 → 眼睛在 52×32 画布里偏右
+  - 根因 2（变小）：`TEE_SIZE=64` 使身体仅 64px（旧渲染器身体填满 96×96 窗口）
+  - 修复：`TEE_SIZE` 64→96（身体恢复填满 96×96）；`renderToPixmap` 改为把身体中心直接放画布中心（不再用 `GetRenderTeeOffsetToRenderedTee` 的 0.12 偏移）；独立眼睛像素图改回经典布局（52×32，左眼 (0,0)、右眼镜像 (16,0)，各 32×32，从皮肤区域采样），与旧渲染器完全一致、保证居中
+  - 修改文件：`src/core/teedrawer.h/.cpp`
+
+- [x] **修复 4K 皮肤区域采样错误（tee_render 集成时引入）**
+  - `configureRegions` 之前直接用 256×128 参考坐标除以实际皮肤尺寸，导致 4K (4096×2048) 只采样左上角 96×96 的一角（身体 UV 变成 (0,0,0.023,0.047) 而非 (0,0,0.375,0.75)）
+  - 修复：先按 `sx=skinW/256, sy=skinH/128` 把参考坐标缩放到实际皮肤，再归一化
+  - 已用 256×128 (Tata) 与 4K (hollowknight) 两种皮肤定量验证：身体填满窗口、眼睛居中
+
+- [x] **修复 4K 皮肤渲染锯齿（强摩尔纹/锯齿感）**
+  - 根因：`QPixmapBackend::DrawQuad` 用 QPainter 双线性从完整 4096×2048 图集直接采样到 96×96 画布（身体区域 1536px→96px，16 倍缩小）。双线性大比例缩小时不对高频细节做面积平均，产生严重摩尔纹/锯齿（合成 1px 条纹测试：直接 4096→96 的亮度 TV=106.6，锯齿严重；逐级缩小到 256 后再渲染 TV=0，完全平滑）
+  - 修复：加载皮肤时用 `downscaleToMaxDim()` 把大图集**逐级 2× 缩小**（每步双线性，等效低通滤波 / CPU 版 mipmap 生成）到最大边 ≤256 的"工作图集"，注册给渲染器采样；眼睛像素图同样从工作图集采样
+  - 256×128 皮肤不受影响（已是工作分辨率，输出与修复前逐像素一致）
+  - 修改文件：`src/core/teedrawer.h/.cpp`
+
+- [x] **修复脚掌被压缩成正方形、且尺寸偏小（tee_render 遗留问题）**
+  - 根因 1（正方形）：上游 DDNet `RenderTee7` 用 `w = h = BaseSize/2.1` 绘制脚掌，把 64×32（2:1）脚掌纹理纵向拉伸 2 倍成正方形（与 `GetRenderTeeFeetSize` 的 2:1 边界计算不一致）
+  - 根因 2（偏小）：`BaseSize/2.1` 使脚掌只有身体 ~48% 宽（96 画布上 45.7px），而旧 Floatee 是 1:1 绘制脚掌纹理（64×32，约 2/3 身体宽）
+  - 修复：渲染器改为 `w = (BaseSize/1.5) * FeetScale.x`、`h = w/2`，脚掌 2:1 且宽度恢复为纹理自然比例 `BaseSize*2/3`（64×32 @ BaseSize=96），与经典 Floatee 比例一致
+  - 修改文件：`tee_render/src/tee_renderer.cpp`、`src/core/teedrawer.cpp`（TeeFoot 裁剪位置）
+
+- [x] **tee_render 从 `extracted/` 移到项目根目录**
+  - `extracted/tee_render/` → 根目录 `tee_render/`（`extracted/` 仅保留分析脚本、参考皮肤等素材，仍被 gitignore）
+  - `CMakeLists.txt`：`add_subdirectory(extracted/tee_render)` → `add_subdirectory(tee_render)`
+  - 更新 `tee_render/` 内部文档（PROGRESS/README/EMOTICON_RENDER）与 `example/main.cpp`、`example/render_skin.py` 中的路径注释
+  - `.gitignore`：新增 `tee_render/build/`（tee_render 现纳入版本控制，构建产物除外）
+  - 重新构建验证通过（产物位于 `build_check/tee_render/`）
+
+- [x] **舍弃 Floatee 手工布局，改用 tee_render 原生布局**
+  - 背景：此前为兼容旧外观，身体被强行放大填满 96×96 窗口、眼睛用独立 QLabel + 手工 52×32 像素图图层（旧 Floatee 布局）
+  - 决定：完全采用 tee_render 原生布局——整个 Tee（身体+脚+眼睛）由管线渲染为**一张完整图像**，居中显示，脚在身体下方
+  - 修改：
+    - `teedrawer.cpp`：`renderToPixmap` 改用 `GetRenderTeeOffsetToRenderedTee` 原生居中；`TEE_SIZE` 96→72（原生居中下能完整放入 96×96 画布的最大尺寸）；`render()` 只渲染完整 Tee（含眼睛），删除旧的眼睛像素图/`TeeBare`/`TeeBody` 等成员
+    - `floatee.cpp`：`BodyLabel` 直接显示完整 `Tee`；删除独立眼睛 QLabel 图层（`Eyes` 类）与手工 `eyePixmap()`；新增 `updateEyeFollow()`——用定时器跟随光标方向，把看向方向传给 `render()` 重新渲染，眼睛在脸部内滑动（tee_render 原生"眼睛跟随"），保留"光标靠近变笑脸"行为；右键循环 / 托盘眼睛菜单 / 换肤 / 调色全部改为重渲染完整 Tee
+  - 验证：三种皮肤 Tee 质心 ≈ 画布中心 (48,48)，身体不再填满窗口，脚在下方，眼睛已渲染进 Tee
+
 ## 已知问题 / 待解决
 
 ### 中优先级
@@ -261,7 +308,7 @@ cmake --build build_android
 
 - [ ] macOS 窗口侧边隐藏：AX API 对部分 Apple 原生应用/SwiftUI/Catalyst 窗口无效
 - [ ] 皮肤文件尚未完全按 4K 模板标准化（部分皮肤元素位置不标准）
-- [ ] 右脚掌位置 `x=34` + width=64，略微超出 96×96 画布（到 98）
+- [x] 右脚掌位置超出画布：旧渲染器遗留问题，tee_render 管线已按管线坐标绘制脚掌，不再超出
 
 ---
 

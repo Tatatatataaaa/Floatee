@@ -11,7 +11,17 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# MSVC: report correct __cplusplus value (required by Qt6)
+if(MSVC)
+    add_compile_options(/Zc:__cplusplus /permissive-)
+    add_compile_definitions(NOMINMAX)
+endif()
+
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets)
+
+# ── tee_render: extracted DDNet Tee render pipeline (zero-dependency C++17) ──
+set(TEE_RENDER_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
+add_subdirectory(tee_render)
 
 # Platform-specific sources
 if(WIN32)
@@ -35,6 +45,7 @@ endif()
 set(SOURCES
     src/main.cpp
     src/core/teedrawer.cpp
+    src/core/tee_qt_backend.cpp
     src/core/jsonopt.cpp
     src/ui/floatee.cpp
     src/ui/teeyes.cpp
@@ -44,6 +55,7 @@ set(SOURCES
 
 set(HEADERS
     src/core/teedrawer.h
+    src/core/tee_qt_backend.h
     src/core/jsonopt.h
     src/ui/floatee.h
     src/ui/teeyes.h
@@ -97,6 +109,7 @@ target_link_libraries(Floatee PRIVATE
     Qt6::Core
     Qt6::Gui
     Qt6::Widgets
+    tee_render
 )
 
 # ── Post-build: copy MinGW runtime DLLs (windeployqt doesn't handle these) ──
