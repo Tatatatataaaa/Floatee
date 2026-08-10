@@ -104,7 +104,7 @@ void Multiplayer::listRooms()
 
 // ── M2：本地角色 / 皮肤 / 眼睛上报 ───────────────────────────────────
 
-void Multiplayer::addLocalRole(const QString &skinName)
+void Multiplayer::addLocalRole(const QString &skinName, int hue, double sat, double light)
 {
     m_localRoleReady = false;   // 收到 role_added 前不上报 mouse/skin
     send(QJsonObject{
@@ -112,6 +112,9 @@ void Multiplayer::addLocalRole(const QString &skinName)
         {QStringLiteral("roleIndex"), 0},
         {QStringLiteral("roleName"), m_clientId},
         {QStringLiteral("skin"), skinName},
+        {QStringLiteral("hue"), hue},
+        {QStringLiteral("sat"), sat},
+        {QStringLiteral("light"), light},
     });
 }
 
@@ -197,6 +200,9 @@ void Multiplayer::upsertPeer(const QJsonObject &member)
         p.roleId = roleId;
         p.roleName = r.value(QStringLiteral("roleName")).toString(roleId);
         p.skin = r.value(QStringLiteral("skin")).toString();
+        p.hue = r.value(QStringLiteral("hue")).toInt(0);
+        p.sat = r.value(QStringLiteral("sat")).toDouble(1.0);
+        p.light = r.value(QStringLiteral("light")).toDouble(1.0);
         m_peers.insert(roleId, p);
     }
 }

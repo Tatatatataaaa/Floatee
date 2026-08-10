@@ -1499,7 +1499,7 @@ void Floatee::onRoomChangedMp()
         // onPeersChangedMp 渲染。
         if (EyeFollowTimer) EyeFollowTimer->setInterval(33);
         m_peersRender.clear();
-        m_multi->addLocalRole(currentSkinName());    // 注册本地角色（含皮肤名）
+        m_multi->addLocalRole(currentSkinName(), HueShift, SatFactor, LightFactor);   // 注册本地角色（含皮肤名 + HSL）
         update();
     } else {
         // 离开房间：保持全屏画布（单机也全屏），清理远端渲染
@@ -1535,8 +1535,11 @@ void Floatee::onPeersChangedMp()
         auto r = m_peersRender.find(it.key());
         if (r == m_peersRender.end()) {
             PeerRender pr;
-            // 只创建一次（shared_ptr），避免 TeeDrawer 浅拷贝悬垂
+            // 只创建一次（shared_ptr），避免 TeeDrawer 浅拷贝悬垂；
+            // 用远端同步的皮肤名 + HSL 调整加载（新 Tee 加入时同步 HSL）
             pr.drawer = std::make_shared<TeeDrawer>(resolveSkinPath(info.skin));
+            if (info.hue != 0 || info.sat != 1.0 || info.light != 1.0)
+                pr.drawer->load(resolveSkinPath(info.skin), info.hue, info.sat, info.light);
             pr.drawer->setFastMode(true);   // 远端轻量渲染，避免弱设备事件循环饿死
             pr.skin = info.skin;
             pr.eye = info.eye;

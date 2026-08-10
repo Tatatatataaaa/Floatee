@@ -84,6 +84,10 @@ export function validate(msg, cfg) {
       if (!Number.isInteger(msg.roleIndex) || msg.roleIndex < 0) return fail('bad_field', 'roleIndex 非法');
       if (msg.roleName !== undefined && !isStr(msg.roleName, cfg.security.maxNameLen)) return fail('bad_field', 'roleName 非法');
       if (msg.skin !== undefined && !SKIN_RE.test(msg.skin)) return fail('bad_field', 'skin 非法');
+      // 皮肤 HSL 调整（可选，随 add_role 同步）
+      if (msg.hue !== undefined && (typeof msg.hue !== 'number' || !Number.isFinite(msg.hue))) return fail('bad_field', 'hue 非法');
+      if (msg.sat !== undefined && (typeof msg.sat !== 'number' || !Number.isFinite(msg.sat) || msg.sat <= 0 || msg.sat > 3)) return fail('bad_field', 'sat 非法');
+      if (msg.light !== undefined && (typeof msg.light !== 'number' || !Number.isFinite(msg.light) || msg.light <= 0 || msg.light > 3)) return fail('bad_field', 'light 非法');
       return ok();
     case MSG.REMOVE_ROLE:
       if (!Number.isInteger(msg.roleIndex) || msg.roleIndex < 0) return fail('bad_field', 'roleIndex 非法');

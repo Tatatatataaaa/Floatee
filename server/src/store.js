@@ -40,10 +40,13 @@ export class Session {
 }
 
 export class RoleInfo {
-  constructor(roleId, roleName = '', skin = '') {
+  constructor(roleId, roleName = '', skin = '', hue = 0, sat = 1, light = 1) {
     this.roleId = roleId;
     this.roleName = roleName;
     this.skin = skin;
+    this.hue = hue;      // 皮肤 HSL 调整（随 add_role 同步）
+    this.sat = sat;
+    this.light = light;
   }
 }
 

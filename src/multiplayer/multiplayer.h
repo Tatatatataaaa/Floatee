@@ -18,6 +18,9 @@ public:
         QString roleId;
         QString roleName;
         QString skin;
+        int hue = 0;          // 皮肤 HSL 调整（随 add_role 同步）
+        double sat = 1.0;
+        double light = 1.0;
         float dx = 0.0f;      // 鼠标相对其 Tee 中心偏移（眼睛方向）
         float dy = 0.0f;
         int eye = 0;          // 眼睛类型 0..4
@@ -42,7 +45,7 @@ public:
     void listRooms();
 
     // 本地角色（M2）
-    void addLocalRole(const QString &skinName);     // 加入房间后注册本地角色
+    void addLocalRole(const QString &skinName, int hue = 0, double sat = 1.0, double light = 1.0);  // 加入房间后注册本地角色
     void updateLocalSkin(const QString &skinName);  // 皮肤变更上报
     void updateLocalMouse(float dx, float dy, int eye, float es); // 眼睛状态上报（节流）
 

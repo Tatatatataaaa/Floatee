@@ -234,7 +234,8 @@ export class RoomManager {
     if (!m) return err('not_in_room', '不在房间中');
     if (session.roles.has(msg.roleIndex)) return err('role_exists', '角色已存在');
     const roleId = `${session.clientId}/${msg.roleIndex}`;
-    const role = new RoleInfo(roleId, msg.roleName || session.displayName, msg.skin || '');
+    const role = new RoleInfo(roleId, msg.roleName || session.displayName,
+      msg.skin || '', msg.hue ?? 0, msg.sat ?? 1, msg.light ?? 1);
     session.roles.set(msg.roleIndex, role);
     m.roles.set(msg.roleIndex, role);
     // 确认给发送者（客户端据此才开始上报 mouse/skin，避免时序竞争）
@@ -309,7 +310,7 @@ export class RoomManager {
     return {
       clientId: session.clientId,
       displayName: session.displayName,
-      roles: [...session.roles.values()].map((r) => ({ roleId: r.roleId, roleName: r.roleName, skin: r.skin })),
+      roles: [...session.roles.values()].map((r) => ({ roleId: r.roleId, roleName: r.roleName, skin: r.skin, hue: r.hue, sat: r.sat, light: r.light })),
     };
   }
 
@@ -317,7 +318,7 @@ export class RoomManager {
     return [...room.members.values()].map((m) => ({
       clientId: m.clientId,
       displayName: m.displayName,
-      roles: [...m.roles.values()].map((r) => ({ roleId: r.roleId, roleName: r.roleName, skin: r.skin })),
+      roles: [...m.roles.values()].map((r) => ({ roleId: r.roleId, roleName: r.roleName, skin: r.skin, hue: r.hue, sat: r.sat, light: r.light })),
     }));
   }
 
