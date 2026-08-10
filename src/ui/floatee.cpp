@@ -171,6 +171,27 @@ void Floatee::Initialize()
     TrayIcon.setToolTip("Floatee");
 
     TrayMenu = new QMenu();
+    // 极简动态风格（与表情圆盘一致）：半透明灰色圆角背景 + 深色字体
+    // 应用于全局 QMenu，覆盖托盘主菜单与所有子菜单（Skin/Eyes/Emoticon 等）
+    qApp->setStyleSheet(QStringLiteral(
+        "QMenu {"
+        "  background-color: rgba(238,238,244,240);"
+        "  border: 1px solid rgba(150,150,168,90);"
+        "  border-radius: 8px;"
+        "  padding: 5px;"
+        "}"
+        "QMenu::item {"
+        "  color: #141414;"
+        "  padding: 6px 26px 6px 18px;"
+        "  border-radius: 5px;"
+        "  margin: 1px 5px;"
+        "  background: transparent;"
+        "}"
+        "QMenu::item:selected { background-color: rgba(120,165,255,70); }"
+        "QMenu::item:disabled { color: rgba(20,20,20,110); }"
+        "QMenu::separator { height: 1px; background: rgba(150,150,168,80); margin: 4px 12px; }"
+        "QMenu::indicator { width: 14px; height: 14px; margin-left: 4px; }"
+    ));
     AlwaysOnTopAction = TrayMenu->addAction("Always on Top");
     AlwaysOnTopAction->setCheckable(true);
     AlwaysOnTopAction->setChecked(Setup["Always_on_the_Top"].toBool());
