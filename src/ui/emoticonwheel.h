@@ -81,10 +81,12 @@ private:
     QElapsedTimer m_animClock;
     QTimer m_animTimer;
     static constexpr qint64 kBgDurMs = 200;       // 背景圆弹出时长
-    static constexpr qint64 kItemStartMs = 150;   // 表情起始延迟（背景未完即开始）
+    static constexpr qint64 kItemStartMs = 100;   // 表情起始延迟（背景未完即开始）
     static constexpr qint64 kItemDelayMs = 24;    // 相邻 item 错开
     static constexpr qint64 kItemDurMs = 320;     // 单个 item 动画时长
     static constexpr qint64 kMaxCount = 16;       // 外环表情数（延迟最大档）
+    // 内环眼睛起始：表情加载一半时（表情错开总时间一半）
+    static constexpr qint64 kEyeStartMs = kItemStartMs + (kMaxCount / 2) * kItemDelayMs;
 
     // 半径参数（屏幕像素）
     static constexpr double kCancelR = 40.0;
