@@ -22,7 +22,7 @@ public:
     static QPixmap adjustHsl(const QPixmap &src, int hueShift, double satFactor, double lightFactor);
 
     // Render a tee with the given eye type and look direction.
-    // eyeIdx: 0=Normal 1=Happy 2=Angry 3=Pain 4=Surprise
+    // eyeIdx: 0=Normal 1=Happy 2=Angry 3=Pain 4=Surprise 5=Blink(压扁闭眼)
     // dir: unit vector pointing where the tee looks (mouse direction)
     // walkPhase: walk-cycle phase in [0,1), or <0 to use the idle pose.
     // eyeOffsetScale: how far the eyes slide within the face (0 = centred,

@@ -24,6 +24,7 @@
 #include "multiplayer/multiplayer.h"
 #include "core/jsonopt.h"
 #include "core/teedrawer.h"
+#include "platform/platformwindowinfo.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -46,6 +47,7 @@ public:
     void wheelEvent(QWheelEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
     void changeEvent(QEvent *event) override;
+    void showEvent(QShowEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
     QSystemTrayIcon TrayIcon;
@@ -128,6 +130,9 @@ public:
     };
     QHash<QString, PeerRender> m_peersRender;   // roleId -> 远端 Tee 渲染
     EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
+    bool m_fullscreenEntered = false;           // 首次 show 后进入全屏（防重复）
+    PlatformWindowInfo *m_platformInfo = nullptr; // 平台层（Win32 顶层置顶）
+    QTimer *m_taskbarTimer = nullptr;           // 周期把任务栏提到最顶层
     bool m_fullscreenCanvas = false;            // 联机全屏画布模式
     QPoint m_preFullscreenPos;                  // 进入全屏前的窗口位置
     QPointF m_localTeePos;                      // 全屏时本地 Tee 的屏幕坐标（左上角）
@@ -222,8 +227,16 @@ protected slots:
     void showEmoticonOnTee(int index, const QString &key = QString());
     // M4：本地发表情（显示 + 联机广播）
     void sendLocalEmoticon(int index);
-    // M4：右键本地 Tee 打开表情圆盘
+    // M4：右键本地 Tee 打开表情圆盘（全屏/非全屏通用）
     void openEmoticonWheel();
+    // M4：圆盘点击提交（表情 / 眼睛 / 取消），widget 坐标
+    void submitEmoticonWheel(const QPointF &widgetPos);
+    // 启动即进入全屏透明画布（单机/联机统一），避免小窗口↔全屏来回切换
+    void enterFullscreenCanvas();
+    // 把系统任务栏提升到 topmost 最顶层（周期调用，保证任务栏永远可见）
+    void raiseTaskbarTopmost();
+    // 临时诊断：输出窗口与任务栏的最终状态（定位任务栏遮挡，定位后移除）
+    void logWindowState();
     // M4：右键远端 Tee 管理菜单（隐藏/重置/踢出）
     void showPeerContextMenu(const QString &roleId, const QPoint &g);
     // M4：收到远端 Tee 表情

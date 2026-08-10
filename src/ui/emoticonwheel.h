@@ -26,11 +26,14 @@ public:
 
     explicit EmoticonWheel(QObject *parent = nullptr);
 
-    // 以屏幕坐标 center 打开 / 关闭
+    // 以屏幕坐标 center 打开 / 关闭；setScale 先设（非全屏小窗口缩小圆盘）
     void open(const QPointF &center) { m_open = true; m_center = center; m_mouse = center; updateSelection(); }
     void close() { m_open = false; }
     bool isOpen() const { return m_open; }
     const QPointF &center() const { return m_center; }
+    // 整体缩放（0.4~2.0）：全屏=1.0，非全屏跟随 Tee 缩放（基础×SizeScale）
+    void setScale(double s) { m_scale = qBound(0.4, s, 2.0); }
+    double scale() const { return m_scale; }
 
     // 鼠标悬停（屏幕坐标）→ 更新高亮
     void setMousePos(const QPointF &g) { if (m_open) { m_mouse = g; updateSelection(); } }
@@ -43,8 +46,9 @@ public:
     // 渲染：emoticonAtlas=表情图集(4×4 网格)，skinAtlas=皮肤图集(256×256)
     void paint(QPainter &p, const QPixmap &emoticonAtlas, const QPixmap &skinAtlas) const;
 
-    // 眼睛图标在皮肤图集中的 X 坐标（256×256 网格，y=96，每格 32×32）。
-    // 顺序：NORMAL, HAPPY, ANGRY, PAIN, SURPRISE, BLINK（BLINK=NORMAL 压扁）
+    // 眼睛图标在皮肤图集中的参考图 X 坐标（256×128 参考图，y=96，每格 32×32），
+    // paint 时按实际皮肤尺寸缩放。顺序：NORMAL, HAPPY, ANGRY, PAIN, SURPRISE, BLINK
+    // （BLINK=NORMAL 压扁）
     static constexpr int kEyeRegionX[6] = { 64, 160, 96, 128, 224, 64 };
     static constexpr int kEyeRegionY = 96;
     static constexpr int kEyeRegionSize = 32;
@@ -58,6 +62,7 @@ private:
     QPointF m_mouse;
     int m_selEmoticon = -1;
     int m_selEye = -1;
+    double m_scale = 1.0;
 
     // 半径参数（屏幕像素）
     static constexpr double kCancelR = 40.0;

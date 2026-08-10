@@ -23,9 +23,47 @@
 #include <QFileInfo>
 #include <QMessageBox>
 #include <QUuid>
+#include <QDateTime>
+#include <QTextStream>
 #include <cmath>
 
-static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise
+#ifdef Q_OS_WIN
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
+// ── 临时诊断：窗口操作日志（定位任务栏遮挡问题，定位后移除）──
+static void dbgWin(const QString &msg)
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    QDir().mkpath(dir);
+    const QString path = dir + QLatin1String("/window_debug.log");
+    QFile f(path);
+    if (f.open(QIODevice::Append | QIODevice::Text)) {
+        QTextStream ts(&f);
+        ts << QDateTime::currentMSecsSinceEpoch() << QLatin1Char(' ') << msg << Qt::endl;
+        f.close();
+    }
+}
+
+static QString rectStr(double x, double y, double w, double h)
+{
+    return QStringLiteral("(%1,%2 %3x%4)").arg(x).arg(y).arg(w).arg(h);
+}
+
+#ifdef Q_OS_WIN
+static QString exStyleStr(LONG_PTR ex)
+{
+    QString s;
+    if (ex & WS_EX_TOPMOST) s += QStringLiteral(" TOPMOST");
+    if (ex & WS_EX_LAYERED) s += QStringLiteral(" LAYERED");
+    if (ex & WS_EX_TRANSPARENT) s += QStringLiteral(" TRANSPARENT");
+    if (ex & WS_EX_TOOLWINDOW) s += QStringLiteral(" TOOLWINDOW");
+    return s.trimmed().isEmpty() ? QStringLiteral("none") : s.trimmed();
+}
+#endif
+
+static int CurrentEye = 0;  // 0=Normal, 1=Happy, 2=Angry, 3=Pain, 4=Surprise, 5=Blink
 
 // Fixed zoom levels shared by the Size menu and the mouse-wheel zoom.
 // 50%..200% in 10% steps (16 levels). Kept in ONE place so the menu and the
@@ -93,6 +131,7 @@ void Floatee::Loading()
 void Floatee::Initialize()
 {
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
+    dbgWin(QStringLiteral("[init] setWindowFlags FramelessWindowHint|Tool"));
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_MacAlwaysShowToolWindow, true);
@@ -104,7 +143,7 @@ void Floatee::Initialize()
     HueShift = hsl.value("HueShift").toInt(0);
     SatFactor = hsl.value("SatFactor").toDouble(1.0);
     LightFactor = hsl.value("LightFactor").toDouble(1.0);
-    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
+    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 5);
     if (!savedSkin.isEmpty())
         ExecTeeDrawer.load(savedSkin, HueShift, SatFactor, LightFactor);
     // Apply saved feather strength (edge anti-aliasing) before the first render
@@ -121,6 +160,7 @@ void Floatee::Initialize()
     // the top band reserved for the over-head emoticon (kEmoticonTop).
     m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
     resize(kWinW, kWinH);
+    dbgWin(QStringLiteral("[init] resize %1x%2").arg(kWinW).arg(kWinH));
     // Multi-instance: nudge non-default profiles so their window doesn't stack
     // exactly on top of the default instance (user can drag it anywhere).
     if (!m_profile.isEmpty())
@@ -153,6 +193,7 @@ void Floatee::Initialize()
 
     QVector<QPair<QString, int>> eyeTypes = {
         {"Normal", 0}, {"Happy", 1}, {"Angry", 2}, {"Pain", 3}, {"Surprise", 4},
+        {"Blink", 5},
     };
 
     EyeMenu = new QMenu("Eyes");
@@ -375,7 +416,10 @@ void Floatee::Initialize()
     if (Setup["Always_on_the_Top"].toBool())
     {
         setWindowFlag(Qt::WindowStaysOnTopHint, true);
+        dbgWin(QStringLiteral("[init] setWindowFlag StaysOnTop=1"));
     }
+    // 全屏画布在 showEvent 首次显示后进入（窗口已显示，screen()/availableGeometry
+    // 正确排除任务栏，置顶 flag 已应用），避免构造阶段几何/置顶异常。
 }
 
 Floatee::Floatee(QWidget *parent)
@@ -421,7 +465,8 @@ void Floatee::mousePressEvent(QMouseEvent *event)
         }
         return;
     }
-    if (event->button() == Qt::LeftButton) {
+    if (event->button() == Qt::LeftButton &&
+        !(m_emoticonWheel && m_emoticonWheel->isOpen())) {
         MousePress = true;
         MousePoint = event->globalPosition().toPoint() - this->pos();
         // Start walking while dragging (phase from horizontal position)
@@ -432,13 +477,8 @@ void Floatee::mousePressEvent(QMouseEvent *event)
         triggerRandomEmoticon();   // drag started
     }
     else if (event->button() == Qt::RightButton) {
-        CurrentEye = (CurrentEye + 1) % 5;
-        RenderedEye = -1;             // force re-render with the new eye
-        updateEyeFollow();
-        triggerRandomEmoticon();      // eye switched
-        // Sync menu checkmark
-        if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
-            EyeGroup->actions()[CurrentEye]->setChecked(true);
+        // M4：单机右键也用圆盘（与联机保持一致），替代原来的右键循环切眼
+        openEmoticonWheel();
     }
     QMainWindow::mousePressEvent(event);
 }
@@ -471,6 +511,10 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
         if (WalkPhase < 0.0f) WalkPhase += 1.0f;
         LastWalkPhase = -2.0f;   // force re-render with the new phase
         updateEyeFollow();
+    } else if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
+        // M4：圆盘打开时更新悬停高亮（widget 坐标）
+        m_emoticonWheel->setMousePos(QPointF(event->position()));
+        update();
     }
     QMainWindow::mouseMoveEvent(event);
 }
@@ -479,33 +523,15 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_fullscreenCanvas) {
         if (m_emoticonWheel && m_emoticonWheel->isOpen() && event->button() == Qt::LeftButton) {
-            // M4：圆盘点击提交（表情 / 眼睛 / 取消）
-            const EmoticonWheel::Result r =
-                m_emoticonWheel->submitAt(QPointF(event->globalPosition().toPoint()));
-            m_emoticonWheel->close();
-            unsetCursor();
-            switch (r.hit) {
-            case EmoticonWheel::Hit::Emoticon:
-                sendLocalEmoticon(r.index);
-                break;
-            case EmoticonWheel::Hit::Eye: {
-                // 内环 6 眼睛：NORMAL/HAPPY/ANGRY/PAIN/SURPRISE/BLINK（BLINK→NORMAL）
-                static const int kEyeMap[6] = { 0, 1, 2, 3, 4, 0 };
-                CurrentEye = kEyeMap[r.index];
-                RenderedEye = -1;
-                updateEyeFollow();   // 眼睛变化随 mouse 消息同步到远端
-                if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
-                    EyeGroup->actions()[CurrentEye]->setChecked(true);
-                break;
-            }
-            default:
-                break;   // Cancel / None → 仅关闭
-            }
-            update();
+            submitEmoticonWheel(QPointF(event->position()));
             return;
         }
         m_dragging = false;
         m_dragRoleId.clear();
+        return;
+    }
+    if (m_emoticonWheel && m_emoticonWheel->isOpen() && event->button() == Qt::LeftButton) {
+        submitEmoticonWheel(QPointF(event->position()));
         return;
     }
     MousePress = false;
@@ -517,16 +543,17 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 
 void Floatee::keyPressEvent(QKeyEvent *event)
 {
-    if (m_fullscreenCanvas) {
-        if (event->key() == Qt::Key_Escape) {
-            if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
-                m_emoticonWheel->close();
-                unsetCursor();
-                update();
-            }
-            event->accept();
-            return;
+    if (event->key() == Qt::Key_Escape) {
+        // Esc 关闭圆盘（全屏/非全屏通用）
+        if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
+            m_emoticonWheel->close();
+            unsetCursor();
+            update();
         }
+        event->accept();
+        return;
+    }
+    if (m_fullscreenCanvas) {
         // M4：数字键 0-9 → 表情 index 0-9（附加快捷）
         const int idx = event->key() - Qt::Key_0;
         if (idx >= 0 && idx <= 9) {
@@ -611,6 +638,10 @@ void Floatee::paintEvent(QPaintEvent *event)
         if (ok)
             p.drawPixmap(0, 0, frame);
     }
+    // M4：表情圆盘 overlay（非全屏也支持，右键本地 Tee 打开）
+    if (m_emoticonWheel && m_emoticonWheel->isOpen())
+        m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
+                               ExecTeeDrawer.SkinFile);
     QMainWindow::paintEvent(event);
 }
 
@@ -699,6 +730,10 @@ void Floatee::triggerRandomEmoticon()
 {
     const int idx = QRandomGenerator::global()->bounded(teer::NUM_EMOTICONS);
     showEmoticonOnTee(idx);
+    // M4：随机表情也转发给房间其他人（每 10s 一次且 50% 概率，远低于
+    // 服务器 emoticonPerSec=5 上限）
+    if (m_multi && m_multi->isConnected() && m_multi->inRoom())
+        m_multi->sendEmoticon(idx);
 }
 
 void Floatee::showEmoticonOnTee(int index, const QString &key)
@@ -732,15 +767,178 @@ void Floatee::sendLocalEmoticon(int index)
         m_multi->sendEmoticon(index);
 }
 
+void Floatee::showEvent(QShowEvent *event)
+{
+    QMainWindow::showEvent(event);
+    // 首次显示后进入始终全屏画布（单机/联机统一）。延迟到事件循环空闲再
+    // 执行：窗口完全映射后 screen()/availableGeometry()（排除任务栏）才稳定、
+    // setGeometry 才真正生效——直接在 showEvent 中设置会被 Qt 初始几何覆盖，
+    // 导致窗口盖住任务栏（之前用 availableGeometry 修复过，此处恢复正确时机）。
+    if (!m_fullscreenEntered) {
+        m_fullscreenEntered = true;
+        dbgWin(QStringLiteral("[showEvent] scheduling enterFullscreenCanvas"));
+        QTimer::singleShot(0, this, &Floatee::enterFullscreenCanvas);
+    }
+}
+
+void Floatee::enterFullscreenCanvas()
+{
+    dbgWin(QStringLiteral("[fullscreen] enter"));
+    QScreen *s = screen();
+    if (!s) s = QGuiApplication::primaryScreen();
+    QRect scr = s ? s->availableGeometry() : QRect();
+    dbgWin(QStringLiteral("[fullscreen] screen=%1 available=%2")
+        .arg(s ? s->name() : QStringLiteral("null"))
+        .arg(rectStr(scr.x(), scr.y(), scr.width(), scr.height())));
+    if (scr.isNull() || scr.isEmpty())
+        scr = QRect(0, 0, 1920, 1080);   // 极端兜底
+#ifdef Q_OS_WIN
+    {
+        APPBARDATA abd;
+        memset(&abd, 0, sizeof(abd));
+        abd.cbSize = sizeof(abd);
+        if (SHAppBarMessage(ABM_GETTASKBARPOS, &abd)) {
+            const RECT &tb = abd.rc;
+            dbgWin(QStringLiteral("[fullscreen] taskbar rect(px)=%1x%2+%3+%4")
+                .arg(tb.right - tb.left).arg(tb.bottom - tb.top).arg(tb.left).arg(tb.top));
+            // AppBar 返回物理像素，Qt 几何是逻辑像素 → 按屏幕 DPI 换算
+            const double dpr = s ? s->devicePixelRatio() : 1.0;
+            const QRectF tbf(tb.left / dpr, tb.top / dpr,
+                             (tb.right - tb.left) / dpr, (tb.bottom - tb.top) / dpr);
+            dbgWin(QStringLiteral("[fullscreen] taskbar rect(log)=%1")
+                .arg(rectStr(tbf.x(), tbf.y(), tbf.width(), tbf.height())));
+            const LONG m = 4;   // 容差（逻辑 px）
+            // 边判定：任务栏贴某一边（任务栏该边 ≈ 屏幕对应边），再裁掉任务栏区域
+            const bool atBottom = std::abs(tbf.bottom() - scr.bottom()) <= m;
+            const bool atTop    = std::abs(tbf.top() - scr.top()) <= m;
+            const bool atLeft   = std::abs(tbf.left() - scr.left()) <= m;
+            const bool atRight  = std::abs(tbf.right() - scr.right()) <= m;
+            dbgWin(QStringLiteral("[fullscreen] edge B=%1 T=%2 L=%3 R=%4")
+                .arg(atBottom).arg(atTop).arg(atLeft).arg(atRight));
+            if (atBottom)      scr.setBottom(qMin(scr.bottom(), int(qRound(tbf.top()))));
+            else if (atTop)    scr.setTop(qMax(scr.top(), int(qRound(tbf.bottom()))));
+            else if (atLeft)   scr.setLeft(qMax(scr.left(), int(qRound(tbf.right()))));
+            else if (atRight)  scr.setRight(qMin(scr.right(), int(qRound(tbf.left()))));
+        } else {
+            dbgWin(QStringLiteral("[fullscreen] ABM_GETTASKBARPOS failed"));
+        }
+    }
+#endif
+    dbgWin(QStringLiteral("[fullscreen] final scr=%1")
+        .arg(rectStr(scr.x(), scr.y(), scr.width(), scr.height())));
+    const QPointF center = QRectF(scr).center();
+    const int cs = ExecTeeDrawer.canvasSize();
+    m_localTeePos = center - QPointF(cs / 2.0, cs / 2.0);
+    setGeometry(scr);
+    dbgWin(QStringLiteral("[fullscreen] after setGeometry geom=%1")
+        .arg(rectStr(geometry().x(), geometry().y(), geometry().width(), geometry().height())));
+    m_fullscreenCanvas = true;
+    m_transparent = true;
+    setAttribute(Qt::WA_TransparentForMouseEvents, true);
+    m_hitTestTimer->start();
+    if (EyeFollowTimer) EyeFollowTimer->setInterval(33);   // 全屏整屏重绘降频
+    // Floatee 置顶顶层（Win32 HWND_TOPMOST）：保证在普通窗口之上。
+    if (!m_platformInfo)
+        m_platformInfo = PlatformWindowInfo::create();
+    if (m_platformInfo)
+        m_platformInfo->setWindowTopmost(reinterpret_cast<void *>(winId()));
+    // 用户方案：任务栏作为最顶层 —— 周期把任务栏提到 HWND_TOPMOST（每秒
+    // 一次，开销极小），无论 Floatee 或其他窗口如何提升，任务栏永远在最上
+    // 可见；配合上面的区域裁切（Floatee 避开任务栏）双重保证。
+    if (!m_taskbarTimer) {
+        m_taskbarTimer = new QTimer(this);
+        m_taskbarTimer->setInterval(1000);
+        connect(m_taskbarTimer, &QTimer::timeout, this, &Floatee::raiseTaskbarTopmost);
+    }
+    m_taskbarTimer->start();
+    raiseTaskbarTopmost();
+    RenderedEye = -1;
+    updateEyeFollow();
+    update();
+    // 延迟检查窗口与任务栏的最终状态
+    QTimer::singleShot(600, this, &Floatee::logWindowState);
+}
+
+void Floatee::raiseTaskbarTopmost()
+{
+#ifdef Q_OS_WIN
+    const HWND htb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+    if (htb) {
+        ::SetWindowPos(htb, HWND_TOPMOST, 0, 0, 0, 0,
+                       SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+#endif
+}
+
+void Floatee::logWindowState()
+{
+#ifdef Q_OS_WIN
+    const HWND hw = reinterpret_cast<HWND>(winId());
+    RECT rc{};
+    ::GetWindowRect(hw, &rc);
+    const LONG_PTR ex = ::GetWindowLongPtrW(hw, GWL_EXSTYLE);
+    dbgWin(QStringLiteral("[state] Floatee rect=%1x%2+%3+%4 ex=%5")
+        .arg(rc.right - rc.left).arg(rc.bottom - rc.top).arg(rc.left).arg(rc.top)
+        .arg(exStyleStr(ex)));
+    const HWND htb = ::FindWindowW(L"Shell_TrayWnd", nullptr);
+    if (htb) {
+        RECT tr{};
+        ::GetWindowRect(htb, &tr);
+        const LONG_PTR tex = ::GetWindowLongPtrW(htb, GWL_EXSTYLE);
+        dbgWin(QStringLiteral("[state] Taskbar rect=%1x%2+%3+%4 ex=%5")
+            .arg(tr.right - tr.left).arg(tr.bottom - tr.top).arg(tr.left).arg(tr.top)
+            .arg(exStyleStr(tex)));
+    } else {
+        dbgWin(QStringLiteral("[state] Shell_TrayWnd not found"));
+    }
+    dbgWin(QStringLiteral("[state] Floatee Qt geom=%1 flags=0x%2")
+        .arg(rectStr(geometry().x(), geometry().y(), geometry().width(), geometry().height()))
+        .arg(quintptr(windowFlags()), 0, 16));
+#endif
+}
+
 void Floatee::openEmoticonWheel()
 {
-    if (!m_emoticonWheel || !m_fullscreenCanvas)
+    if (!m_emoticonWheel)
         return;
     const int cs = ExecTeeDrawer.canvasSize();
     const float ts = ExecTeeDrawer.teeSize();
-    const QPointF teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+    // 中心 = 本地 Tee 中心（全屏画布，widget 坐标 == 屏幕坐标）
+    QPointF teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+    m_emoticonWheel->setScale(1.0);
+    // Tee 贴近屏幕边缘时圆盘内移，不被屏幕边界裁断
+    const double R = 190.0 * m_emoticonWheel->scale();
+    teeCenter.setX(qBound(R, teeCenter.x(), qMax(R, double(width()) - R)));
+    teeCenter.setY(qBound(R, teeCenter.y(), qMax(R, double(height()) - R)));
     m_emoticonWheel->open(teeCenter);
     setCursor(Qt::CrossCursor);
+    update();
+}
+
+void Floatee::submitEmoticonWheel(const QPointF &widgetPos)
+{
+    if (!m_emoticonWheel || !m_emoticonWheel->isOpen())
+        return;
+    const EmoticonWheel::Result r = m_emoticonWheel->submitAt(widgetPos);
+    m_emoticonWheel->close();
+    unsetCursor();
+    switch (r.hit) {
+    case EmoticonWheel::Hit::Emoticon:
+        sendLocalEmoticon(r.index);
+        break;
+    case EmoticonWheel::Hit::Eye: {
+        // 内环 6 眼睛：NORMAL/HAPPY/ANGRY/PAIN/SURPRISE/BLINK
+        static const int kEyeMap[6] = { 0, 1, 2, 3, 4, 5 };
+        CurrentEye = kEyeMap[r.index];
+        RenderedEye = -1;
+        updateEyeFollow();   // 眼睛变化随 mouse 消息同步到远端（联机时）
+        if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
+            EyeGroup->actions()[CurrentEye]->setChecked(true);
+        break;
+    }
+    default:
+        break;   // Cancel / None → 仅关闭
+    }
     update();
 }
 
@@ -753,24 +951,36 @@ void Floatee::onEmoticonReceivedMp(const QString &roleId, int index)
 
 void Floatee::paintEmoticonsFullscreen(QPainter &p)
 {
-    const int box = 240;   // 表情局部渲染盒（以 Tee 中心为中心）
     for (const QString &key : EmoticonWin->activeKeys()) {
         QPointF teeCenter;
+        float teeSize;
         if (key.isEmpty()) {
             const int cs = ExecTeeDrawer.canvasSize();
-            const float ts = ExecTeeDrawer.teeSize();
-            teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+            teeSize = ExecTeeDrawer.teeSize();
+            teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * teeSize);
         } else {
             const auto it = m_peersRender.constFind(key);
             if (it == m_peersRender.constEnd() || !it->drawer || it->hidden)
                 continue;
             const int pcs = it->drawer->canvasSize();
-            const float pts = it->drawer->teeSize();
-            teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
+            teeSize = it->drawer->teeSize();
+            teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * teeSize);
         }
+        // 气泡 quad：中心在 Tee 上方 55*Scale、尺寸 64*Scale（Scale=teeSize/64）。
+        // 渲染缓冲只包住气泡（±40*Scale），锚点使气泡中心落在缓冲中央；
+        // 气泡中心期望在 Tee 正上方，再钳制到窗口内 —— Tee 贴边时气泡只轻微
+        // 内移，不会因缓冲盒被屏幕边缘裁掉而与 Tee 错位。
+        const float scale = teeSize / 64.0f;
+        const double half = 40.0 * scale;
+        const int box = qCeil(half * 2.0);
+        QPointF bubble(teeCenter.x(), teeCenter.y() - 55.0 * scale);
+        bubble.setX(qBound(half, bubble.x(), qMax(half, double(width()) - half)));
+        bubble.setY(qBound(half, bubble.y(), qMax(half, double(height()) - half)));
         QPixmap frame(box, box);
-        if (EmoticonWin->renderFrame(frame, key, QPointF(box / 2.0, box / 2.0)))
-            p.drawPixmap(qRound(teeCenter.x() - box / 2.0), qRound(teeCenter.y() - box / 2.0), frame);
+        // frame 内 TeePos：使气泡中心落在 frame 中央 (half, half)；表情尺寸
+        // 跟随当前 teeSize，与缓冲盒（同一 teeSize 计算）一致，不裁断
+        if (EmoticonWin->renderFrame(frame, key, QPointF(half, half + 55.0 * scale), teeSize))
+            p.drawPixmap(qRound(bubble.x() - half), qRound(bubble.y() - half), frame);
     }
 }
 
@@ -1046,37 +1256,19 @@ void Floatee::onRoomChangedMp()
     if (!m_multi)
         return;
     if (m_multi->inRoom() && m_multi->isConnected()) {
-        // 进入房间：切到全屏透明画布（本地 + 远端 Tee 都在上面）。
-        // 用 availableGeometry 排除任务栏，避免置顶时盖住任务栏。
-        m_preFullscreenPos = pos();
-        m_localTeePos = QPointF(pos()) + m_teePos;   // 本地 Tee 屏幕坐标（左上角）
-        const QRect scr = screen()->availableGeometry();
-        setGeometry(scr);
-        m_fullscreenCanvas = true;
-        m_transparent = true;
-        setAttribute(Qt::WA_TransparentForMouseEvents, true);
-        m_hitTestTimer->start();
-        // 全屏图层窗口每帧整屏重绘开销大：眼睛跟随从 16ms 降到 33ms
+        // 进房间：保持全屏画布（启动即全屏），注册本地角色；远端 Tee 由
+        // onPeersChangedMp 渲染。
         if (EyeFollowTimer) EyeFollowTimer->setInterval(33);
         m_peersRender.clear();
         m_multi->addLocalRole(currentSkinName());    // 注册本地角色（含皮肤名）
         update();
     } else {
-        // 离开房间：恢复固定窗口
+        // 离开房间：保持全屏画布（单机也全屏），清理远端渲染
         if (EmoticonWin) EmoticonWin->hideEmoticon();
         if (m_emoticonWheel) { m_emoticonWheel->close(); unsetCursor(); }
-        m_fullscreenCanvas = false;
-        m_hitTestTimer->stop();
-        m_transparent = false;
-        setAttribute(Qt::WA_TransparentForMouseEvents, false);
-        if (EyeFollowTimer) EyeFollowTimer->setInterval(16);
+        if (EyeFollowTimer) EyeFollowTimer->setInterval(33);
         m_peersRender.clear();
         m_dragRoleId.clear();
-        const QPoint pos2 = m_preFullscreenPos.isNull() ? pos() : m_preFullscreenPos;
-        setGeometry(QRect(pos2, QSize(kWinW, kWinH)));
-        m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
-        RenderedEye = -1;
-        updateEyeFollow();
         update();
     }
 }
@@ -1200,6 +1392,7 @@ void Floatee::onHitTestTick()
     // 的重要来源。
     if (want != m_transparent) {
         m_transparent = want;
+        dbgWin(QStringLiteral("[hit] transparent=%1 setAttribute").arg(want));
         setAttribute(Qt::WA_TransparentForMouseEvents, want);
     }
 }
@@ -1316,7 +1509,7 @@ void Floatee::applyLiveConfig()
         CurrentSkin = skin;
         ExecTeeDrawer.load(skin, HueShift, SatFactor, LightFactor);
     }
-    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 4);
+    CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 5);
     ExecTeeDrawer.setFeatherStrength(qBound(0, Setup.value("Feather").toInt(1), 2));
     SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
     ExecTeeDrawer.setRenderScale(SizeScale);

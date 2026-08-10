@@ -75,7 +75,7 @@ void EmoticonWindow::updateFrame()
 }
 
 bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
-                                 const QPointF &teePosInTarget)
+                                 const QPointF &teePosInTarget, float teeSize)
 {
     const auto it = m_active.constFind(key);
     if (it == m_active.constEnd())
@@ -86,10 +86,12 @@ bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
         return false;
     }
 
-    // Render the current animation frame via the pipeline.
+    // Render the current animation frame via the pipeline, sized to the
+    // CURRENT tee size (tracks live zoom changes so the bubble never exceeds
+    // the host's buffer computed from the same size).
     target.fill(Qt::transparent);
     m_backend.target = target;
-    m_renderer.SetTeeSize(it->teeSize);
+    m_renderer.SetTeeSize(teeSize);
     m_renderer.RenderEmoticon(teer::vec2(teePosInTarget.x(), teePosInTarget.y()),
                               it->index, elapsed, 1.0f);
     // QPixmap implicit sharing: painting into backend.target may have detached
@@ -97,6 +99,16 @@ bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
     // TeeDrawer's `out = m_backend.target`).
     target = m_backend.target;
     return true;
+}
+
+bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
+                                 const QPointF &teePosInTarget)
+{
+    // 无 teeSize 重载：用播放开始时的初始尺寸（旧调用兼容）
+    const auto it = m_active.constFind(key);
+    if (it == m_active.constEnd())
+        return false;
+    return renderFrame(target, key, teePosInTarget, it->teeSize);
 }
 
 bool EmoticonWindow::renderFrame(QPixmap &target, const QPointF &teePosInTarget)

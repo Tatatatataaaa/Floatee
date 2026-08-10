@@ -53,6 +53,10 @@ public:
     // Render the current animation frame of `key` into target (sized by the
     // host to its window). teePosInTarget = the tee's TeePos in the host
     // window's coordinates. Returns false when key has no active emoticon.
+    // teeSize = 当前 tee 渲染尺寸：表情尺寸跟随实时缩放，保证与宿主按当前
+    // teeSize 计算的渲染缓冲一致（播放中缩小 Tee 不裁断）。
+    bool renderFrame(QPixmap &target, const QString &key, const QPointF &teePosInTarget,
+                     float teeSize);
     bool renderFrame(QPixmap &target, const QString &key, const QPointF &teePosInTarget);
     bool renderFrame(QPixmap &target, const QPointF &teePosInTarget);     // local
 

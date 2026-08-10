@@ -69,6 +69,7 @@ teer::EEmote TeeDrawer::mapEye(int eyeIdx)
     case 2:  return teer::EMOTE_ANGRY;
     case 3:  return teer::EMOTE_PAIN;
     case 4:  return teer::EMOTE_SURPRISE;
+    case 5:  return teer::EMOTE_BLINK;   // 压扁闭眼（默认眼垂直压扁）
     default: return teer::EMOTE_NORMAL;
     }
 }
