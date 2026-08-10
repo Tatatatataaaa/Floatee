@@ -12,4 +12,6 @@ Floatee.pro
 *.md
 !README.md
 !README_zh.md
+!server/README.md
+!tee_render/README.md
 archives/
