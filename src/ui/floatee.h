@@ -57,6 +57,7 @@ public:
     QMenu *SizeMenu = nullptr;
     QMenu *FeatherMenu = nullptr;
     QMenu *EmoticonMenu = nullptr;   // M4：16 表情托盘子菜单
+    QMenu *EmoticonSetMenu = nullptr; // 表情素材（图集）子菜单，类似 Skin
     QMenu *InstanceMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
     QActionGroup *EyeGroup = nullptr;
@@ -67,6 +68,7 @@ public:
     QAction *WindowSideHideAction = nullptr;
     QAction *TeEyesAction = nullptr;
     QString CurrentSkin;
+    QString EmoticonSet;   // 当前表情素材路径（qrc 或外部文件），纯本地
     QPoint MousePoint;
     bool MousePress;
 
@@ -179,6 +181,8 @@ protected slots:
     void switchEye(QAction *action);
     void switchSize(QAction *action);
     void switchFeather(QAction *action);
+    // 表情素材切换（纯本地，不参与联网同步）
+    void switchEmoticonSet(QAction *action);
     // ── online 分支：Multiplayer 托盘菜单 ──
     void mpConnect();
     void mpDisconnect();

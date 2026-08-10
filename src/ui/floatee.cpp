@@ -295,6 +295,46 @@ void Floatee::Initialize()
     TrayMenu->addMenu(FeatherMenu);
     TrayMenu->addMenu(SkinMenu);
 
+    // ── Emoticon Set submenu（自选表情素材，类似 Skin；纯本地不参与联网）──
+    // 每个表情素材 = 一张 4×4 网格图集 PNG（含 16 个表情）；内置默认 + 外部
+    // emoticons/ 目录（%APPDATA%\Floatee\emoticons\*.png）。切换只改本地图集，
+    // 不向服务器同步。
+    EmoticonSetMenu = new QMenu("Emoticon Set");
+    QActionGroup *emoSetGroup = new QActionGroup(EmoticonSetMenu);
+    emoSetGroup->setExclusive(true);
+    const QString defaultEmo = QStringLiteral(":/main/emoticons.png");
+    EmoticonSet = Setup.value("EmoticonSet").toString(defaultEmo);
+    if (!QFile::exists(EmoticonSet))
+        EmoticonSet = defaultEmo;
+    {
+        QAction *a = EmoticonSetMenu->addAction(QStringLiteral("Default"));
+        a->setCheckable(true);
+        a->setData(defaultEmo);
+        a->setChecked(EmoticonSet == defaultEmo);
+        emoSetGroup->addAction(a);
+    }
+    const QString emoDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                           + QStringLiteral("/emoticons");
+    QDirIterator eit(emoDir, {"*.png"}, QDir::Files);
+    bool hasExternalEmo = false;
+    while (eit.hasNext()) {
+        eit.next();
+        if (!hasExternalEmo) { EmoticonSetMenu->addSeparator(); hasExternalEmo = true; }
+        QAction *a = EmoticonSetMenu->addAction(eit.fileInfo().completeBaseName());
+        a->setCheckable(true);
+        a->setData(eit.filePath());
+        a->setChecked(eit.filePath() == EmoticonSet);
+        emoSetGroup->addAction(a);
+    }
+    EmoticonSetMenu->addSeparator();
+    QAction *openEmoFolder = EmoticonSetMenu->addAction("Open Emoticons Folder");
+    connect(openEmoFolder, &QAction::triggered, this, [emoDir]() {
+        QDir().mkpath(emoDir);
+        QDesktopServices::openUrl(QUrl::fromLocalFile(emoDir));
+    });
+    connect(EmoticonSetMenu, &QMenu::triggered, this, &Floatee::switchEmoticonSet);
+    TrayMenu->addMenu(EmoticonSetMenu);
+
     // ── Emoticon submenu（M4：16 个表情，点击本地显示 + 联机发送）──
     EmoticonMenu = new QMenu("Emoticon");
     for (int i = 0; i < teer::NUM_EMOTICONS; ++i)
@@ -408,8 +448,15 @@ void Floatee::Initialize()
     // Its frame is drawn by paintEvent into this (single) window, because a
     // second translucent layered window is never composited on this setup.
     EmoticonWin = new EmoticonWindow(this);
-    if (!EmoticonWin->loadAtlas(QPixmap(QStringLiteral(":/main/emoticons.png"))))
-        qWarning() << "Floatee: failed to load emoticon atlas";
+    // 表情素材：按配置加载（内置默认或外部 emoticons/ 目录），纯本地
+    {
+        const QString defaultEmo = QStringLiteral(":/main/emoticons.png");
+        QString emoPath = Setup.value("EmoticonSet").toString(defaultEmo);
+        if (!QFile::exists(emoPath))
+            emoPath = defaultEmo;
+        if (!EmoticonWin->loadAtlas(QPixmap(emoPath)))
+            qWarning() << "Floatee: failed to load emoticon atlas" << emoPath;
+    }
     connect(EmoticonWin, &EmoticonWindow::frameChanged, this, qOverload<>(&QWidget::update));
     m_emoticonWheel = new EmoticonWheel(this);   // M4：表情圆盘（全屏画布 overlay）
     EmoticonRandomTimer = new QTimer(this);
@@ -1167,6 +1214,18 @@ void Floatee::switchSkin(QAction *action)
         show();
 
     Setup["Skin"] = path;
+    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+}
+
+void Floatee::switchEmoticonSet(QAction *action)
+{
+    QString path = action->data().toString();
+    if (path.isEmpty() || path == EmoticonSet)
+        return;
+    if (!EmoticonWin || !EmoticonWin->loadAtlas(QPixmap(path)))
+        return;   // 图集加载失败则不切换
+    EmoticonSet = path;
+    Setup["EmoticonSet"] = path;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
