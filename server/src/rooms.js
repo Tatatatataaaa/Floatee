@@ -232,6 +232,8 @@ export class RoomManager {
     const role = new RoleInfo(roleId, msg.roleName || session.displayName, msg.skin || '');
     session.roles.set(msg.roleIndex, role);
     m.roles.set(msg.roleIndex, role);
+    // 确认给发送者（客户端据此才开始上报 mouse/skin，避免时序竞争）
+    session.send({ type: MSG.ROLE_ADDED, roleId });
     // 广播新角色给房间内其他人
     this.broadcast(room, session, { type: MSG.PEER_JOINED, member: this.sessionMember(room, session) });
     return { ok: true };
@@ -259,7 +261,7 @@ export class RoomManager {
 
   mouse(session, msg) {
     if (!this.hasRole(session, msg.roleId)) return err('role_not_found', '角色不属于本连接');
-    this.broadcastEvent(session, { type: MSG.PEER_MOUSE, roleId: msg.roleId, dx: msg.dx, dy: msg.dy, eye: msg.eye ?? 0 });
+    this.broadcastEvent(session, { type: MSG.PEER_MOUSE, roleId: msg.roleId, dx: msg.dx, dy: msg.dy, eye: msg.eye ?? 0, es: msg.es ?? 0 });
     return { ok: true };
   }
 

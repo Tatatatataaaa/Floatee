@@ -14,6 +14,7 @@
 #include <QMenu>
 #include <QSystemTrayIcon>
 #include <QProcess>
+#include <memory>
 
 #include "ui/windowsidehide.h"
 #include "ui/teeyes.h"
@@ -99,6 +100,36 @@ public:
     Multiplayer *m_multi = nullptr;
     QMenu *MpMenu = nullptr;
     QAction *MpStatusAction = nullptr;
+
+    // ── M2 多人渲染：全屏画布 + Peer ──
+    // 注意：TeeDrawer 的 m_renderer 持有 &m_backend（裸指针），浅拷贝会悬垂。
+    // 因此 PeerRender 用 shared_ptr<TeeDrawer>（只创建一次、QHash 拷贝安全）。
+    struct PeerRender {
+        std::shared_ptr<TeeDrawer> drawer;   // 创建时按皮肤加载
+        QPointF pos;               // 屏幕坐标（画布左上角）
+        float scale = 1.0f;
+        QString skin;              // 当前已加载的皮肤名（变化时重建 body 层）
+        int eye = 0;
+        QPointF dir{0.0f, -1.0f};
+        float eyeScale = 0.0f;     // 远端眼睛偏移幅度（同步自对端）
+        // 分离渲染（弱设备关键优化）：body（身体+轮廓+脚）静态，仅在皮肤变化
+        // 时重渲染；eyes（眼睛层）每次眼睛/方向变化只重渲染眼睛小区域。
+        QPixmap body;
+        QPixmap eyes;
+        // 渲染缓存：数据未变化（含容差）时跳过重渲染（降低 CPU）
+        int lastEye = -1;
+        float lastEyeScale = -1.0f;
+        QPointF lastDir{0.0f, 0.0f};
+    };
+    QHash<QString, PeerRender> m_peersRender;   // roleId -> 远端 Tee 渲染
+    bool m_fullscreenCanvas = false;            // 联机全屏画布模式
+    QPoint m_preFullscreenPos;                  // 进入全屏前的窗口位置
+    QPointF m_localTeePos;                      // 全屏时本地 Tee 的屏幕坐标（左上角）
+    QString m_dragRoleId;                       // 拖拽目标 roleId（空 = 本地 Tee）
+    bool m_dragging = false;                    // 是否正在拖拽（本地也用空 roleId，需独立标志）
+    QPointF m_dragOffset;                       // 按下点到 Tee 左上角偏移
+    QTimer *m_hitTestTimer = nullptr;           // 动态点击穿透检测
+    bool m_transparent = false;                 // 当前穿透状态（仅在变化时 setAttribute）
     // True while the cursor is hovering the tee (petting); used to edge-trigger
     // the hearts emoticon once per entry instead of spamming every frame.
     bool m_petting = false;
@@ -140,6 +171,14 @@ protected slots:
     void mpJoinRoom();
     void mpShowJoinCode();
     void mpRoomList();
+
+    // ── M2：全屏画布 / Peer 渲染 / 交互 ──
+    void onRoomChangedMp();     // 进出房间 → 切换全屏画布
+    void onPeersChangedMp();    // Peer 表变化 → 同步渲染
+    void onHitTestTick();       // 动态点击穿透检测
+    QString currentSkinName() const;                 // 皮肤文件名（用于同步）
+    // 命中检测；pad 为命中框外扩像素（穿透轮询用大 pad，交互用 0）
+    bool hitTestTee(const QPoint &g, QString *outRoleId, int pad = 0) const;
 
     // One-click multi-instance: launch a NEW PROCESS with an auto-generated
     // unique profile name (no dialog) for quick side-by-side pets.

@@ -2,6 +2,7 @@
 
 #include <QJsonDocument>
 #include <QJsonArray>
+#include <QDateTime>
 
 Multiplayer::Multiplayer(QObject *parent)
     : QObject(parent)
@@ -101,6 +102,72 @@ void Multiplayer::listRooms()
     send(QJsonObject{{QStringLiteral("type"), QStringLiteral("list_rooms")}});
 }
 
+// ── M2：本地角色 / 皮肤 / 眼睛上报 ───────────────────────────────────
+
+void Multiplayer::addLocalRole(const QString &skinName)
+{
+    m_localRoleReady = false;   // 收到 role_added 前不上报 mouse/skin
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("add_role")},
+        {QStringLiteral("roleIndex"), 0},
+        {QStringLiteral("roleName"), m_clientId},
+        {QStringLiteral("skin"), skinName},
+    });
+}
+
+void Multiplayer::updateLocalSkin(const QString &skinName)
+{
+    if (!m_localRoleReady)
+        return;
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("skin_update")},
+        {QStringLiteral("roleId"), localRoleId()},
+        {QStringLiteral("skin"), skinName},
+    });
+}
+
+void Multiplayer::updateLocalMouse(float dx, float dy, int eye, float es)
+{
+    if (!m_localRoleReady)
+        return;
+    // 值无变化时不上报（鼠标不动则完全静默，大幅降低对端负载）
+    if (dx == m_lastDx && dy == m_lastDy && eye == m_lastEye && es == m_lastEs)
+        return;
+    // 节流：每 60ms 最多发一次（~16.7/s，低于服务器上限 20/s，避免撞限流）。
+    // 眼睛分离渲染 + 条件重绘后，提高同步频率的边际成本很小（每次只渲染
+    // 眼睛小区域，且仅真正变化时才整屏重绘），换来更平滑的远端眼睛跟随。
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    if (now - m_lastMouseSent < 60)
+        return;
+    m_lastMouseSent = now;
+    m_lastDx = dx; m_lastDy = dy; m_lastEye = eye; m_lastEs = es;
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("mouse")},
+        {QStringLiteral("roleId"), localRoleId()},
+        {QStringLiteral("dx"), double(dx)},
+        {QStringLiteral("dy"), double(dy)},
+        {QStringLiteral("eye"), eye},
+        {QStringLiteral("es"), double(es)},
+    });
+}
+
+void Multiplayer::upsertPeer(const QJsonObject &member)
+{
+    // member: { clientId, displayName, roles: [ {roleId, roleName, skin} ] }
+    const QJsonArray roles = member.value(QStringLiteral("roles")).toArray();
+    for (int i = 0; i < roles.size(); ++i) {
+        const QJsonObject r = roles.at(i).toObject();
+        const QString roleId = r.value(QStringLiteral("roleId")).toString();
+        if (roleId.isEmpty())
+            continue;
+        PeerInfo p;
+        p.roleId = roleId;
+        p.roleName = r.value(QStringLiteral("roleName")).toString(roleId);
+        p.skin = r.value(QStringLiteral("skin")).toString();
+        m_peers.insert(roleId, p);
+    }
+}
+
 // ── 网络事件 ─────────────────────────────────────────────────────────
 
 void Multiplayer::onConnected()
@@ -179,14 +246,24 @@ void Multiplayer::onMessage(const QJsonObject &msg)
     }
     if (type == QLatin1String("room_joined")) {
         m_roomId = msg.value(QStringLiteral("roomId")).toString();
+        // 现有成员角色进入 peer 表（不含自己，服务器 room_joined 的 members 含自己但可过滤）
+        m_peers.clear();
+        const QJsonArray members = msg.value(QStringLiteral("members")).toArray();
+        for (int i = 0; i < members.size(); ++i) {
+            const QJsonObject m = members.at(i).toObject();
+            if (m.value(QStringLiteral("clientId")).toString() != m_clientId)
+                upsertPeer(m);
+        }
         emit notify(QStringLiteral("Multiplayer"), QStringLiteral("已加入房间 %1").arg(m_roomId), false);
         emit roomChanged();
+        emit peersChanged();
         updateStatus();
         return;
     }
     if (type == QLatin1String("room_left")) {
         clearRoom();
         emit roomChanged();
+        emit peersChanged();
         updateStatus();
         return;
     }
@@ -195,7 +272,43 @@ void Multiplayer::onMessage(const QJsonObject &msg)
                     QStringLiteral("房间已关闭: %1").arg(msg.value(QStringLiteral("reason")).toString()), true);
         clearRoom();
         emit roomChanged();
+        emit peersChanged();
         updateStatus();
+        return;
+    }
+    if (type == QLatin1String("role_added")) {
+        m_localRoleReady = true;   // 本地角色已注册，可开始上报
+        return;
+    }
+    if (type == QLatin1String("peer_joined")) {
+        upsertPeer(msg.value(QStringLiteral("member")).toObject());
+        emit peersChanged();
+        return;
+    }
+    if (type == QLatin1String("peer_left")) {
+        m_peers.remove(msg.value(QStringLiteral("roleId")).toString());
+        emit peersChanged();
+        return;
+    }
+    if (type == QLatin1String("peer_skin")) {
+        const QString roleId = msg.value(QStringLiteral("roleId")).toString();
+        auto it = m_peers.find(roleId);
+        if (it != m_peers.end()) {
+            it->skin = msg.value(QStringLiteral("skin")).toString();
+            emit peersChanged();
+        }
+        return;
+    }
+    if (type == QLatin1String("peer_mouse")) {
+        const QString roleId = msg.value(QStringLiteral("roleId")).toString();
+        auto it = m_peers.find(roleId);
+        if (it != m_peers.end()) {
+            it->dx = float(msg.value(QStringLiteral("dx")).toDouble());
+            it->dy = float(msg.value(QStringLiteral("dy")).toDouble());
+            it->eye = msg.value(QStringLiteral("eye")).toInt(0);
+            it->es = float(msg.value(QStringLiteral("es")).toDouble());
+            emit peersChanged();
+        }
         return;
     }
     if (type == QLatin1String("room_list")) {
@@ -218,8 +331,10 @@ void Multiplayer::onMessage(const QJsonObject &msg)
             stopReconnect();
             m_client->disconnectFromServer();
         }
-        emit notify(QStringLiteral("Multiplayer"),
-                    msg.value(QStringLiteral("message")).toString(), true);
+        // rate_limited（如偶发 mouse 撞限流）静默处理：弹模态框会阻塞主线程
+        if (code != QLatin1String("rate_limited"))
+            emit notify(QStringLiteral("Multiplayer"),
+                        msg.value(QStringLiteral("message")).toString(), true);
         return;
     }
 }
@@ -229,7 +344,8 @@ void Multiplayer::clearRoom()
     m_roomId.clear();
     m_joinCode.clear();
     m_ownerToken.clear();
-    m_members.clear();
+    m_peers.clear();
+    m_localRoleReady = false;
 }
 
 void Multiplayer::updateStatus()

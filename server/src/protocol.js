@@ -26,6 +26,7 @@ export const MSG = {
   ROOM_LIST: 'room_list',
   ROOM_SETTINGS_UPDATED: 'room_settings_updated',
   ROOM_CLOSED: 'room_closed',
+  ROLE_ADDED: 'role_added',
   PEER_JOINED: 'peer_joined',
   PEER_LEFT: 'peer_left',
   PEER_KICKED: 'peer_kicked',
@@ -94,6 +95,8 @@ export function validate(msg, cfg) {
         return fail('bad_field', 'dx/dy 非法');
       if (msg.eye !== undefined && (!Number.isInteger(msg.eye) || msg.eye < 0 || msg.eye > 4))
         return fail('bad_field', 'eye 非法');
+      if (msg.es !== undefined && (typeof msg.es !== 'number' || !Number.isFinite(msg.es) || msg.es < 0 || msg.es > 3))
+        return fail('bad_field', 'es 非法');
       return ok();
     }
     case MSG.EMOTICON:

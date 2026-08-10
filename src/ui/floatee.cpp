@@ -320,6 +320,12 @@ void Floatee::Initialize()
             if (text.isEmpty()) text = QStringLiteral("（当前无可加入房间）");
             QMessageBox::information(this, QStringLiteral("Room List"), text);
         });
+        // M2：进出房间切换全屏画布；Peer 表变化刷新渲染
+        connect(m_multi, &Multiplayer::roomChanged, this, &Floatee::onRoomChangedMp);
+        connect(m_multi, &Multiplayer::peersChanged, this, &Floatee::onPeersChangedMp);
+        m_hitTestTimer = new QTimer(this);
+        m_hitTestTimer->setInterval(16);
+        connect(m_hitTestTimer, &QTimer::timeout, this, &Floatee::onHitTestTick);
     }
 
     TrayMenu->addSeparator();
@@ -376,6 +382,21 @@ Floatee::~Floatee()
 
 void Floatee::mousePressEvent(QMouseEvent *event)
 {
+    // M2 全屏画布：左键拖拽命中的 Tee（本地或远端，仅本地摆放）；右键 M4 表情圆盘
+    if (m_fullscreenCanvas) {
+        if (event->button() == Qt::LeftButton) {
+            const QPoint g = event->globalPosition().toPoint();
+            QString roleId;
+            if (hitTestTee(g, &roleId)) {
+                m_dragging = true;      // 本地 Tee 的 roleId 为空串，需独立标志
+                m_dragRoleId = roleId;
+                const QPointF teePos = roleId.isEmpty() ? m_localTeePos
+                                                        : m_peersRender.value(roleId).pos;
+                m_dragOffset = QPointF(g) - teePos;
+            }
+        }
+        return;
+    }
     if (event->button() == Qt::LeftButton) {
         MousePress = true;
         MousePoint = event->globalPosition().toPoint() - this->pos();
@@ -400,6 +421,21 @@ void Floatee::mousePressEvent(QMouseEvent *event)
 
 void Floatee::mouseMoveEvent(QMouseEvent *event)
 {
+    // M2 全屏画布：拖拽 Tee（本地/远端）仅改变本地摆放
+    if (m_fullscreenCanvas) {
+        if (m_dragging) {
+            const QPointF np = QPointF(event->globalPosition().toPoint()) - m_dragOffset;
+            if (m_dragRoleId.isEmpty()) {
+                m_localTeePos = np;
+                RenderedEye = -1;
+                updateEyeFollow();
+            } else {
+                m_peersRender[m_dragRoleId].pos = np;
+                update();
+            }
+        }
+        return;
+    }
     if (MousePress) {
         move(event->globalPosition().toPoint() - MousePoint);
         // Walk-cycle phase follows the horizontal position (DDNet formula).
@@ -413,6 +449,11 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 
 void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (m_fullscreenCanvas) {
+        m_dragging = false;
+        m_dragRoleId.clear();
+        return;
+    }
     MousePress = false;
     WalkPhase = -1.0f;   // stop walking, back to idle
     LastWalkPhase = -2.0f;
@@ -451,6 +492,24 @@ void Floatee::refreshTranslucentDisplay()
 
 void Floatee::paintEvent(QPaintEvent *event)
 {
+    // M2：联机全屏画布 —— 本地 + 远端 Peer 的 Tee 都画在屏幕上（屏幕坐标=画布坐标）
+    if (m_fullscreenCanvas) {
+        QPainter p(this);
+        p.drawPixmap(qRound(m_localTeePos.x()), qRound(m_localTeePos.y()), ExecTeeDrawer.Tee);
+        for (const auto &pr : m_peersRender) {
+            if (!pr.drawer || pr.drawer->canvasSize() <= 0)
+                continue;
+            // 分离渲染：body 静态（皮肤变化才重建），eyes 在数据变化时重渲染
+            // （onPeersChangedMp），这里只贴图
+            if (!pr.body.isNull())
+                p.drawPixmap(qRound(pr.pos.x()), qRound(pr.pos.y()), pr.body);
+            if (!pr.eyes.isNull())
+                p.drawPixmap(qRound(pr.pos.x()), qRound(pr.pos.y()), pr.eyes);
+        }
+        QMainWindow::paintEvent(event);
+        return;
+    }
+
     // Paint the tee directly into the translucent top-level window — the
     // canonical reliable pattern for alpha compositing. The window has a FIXED
     // size; the tee is drawn at m_teePos (content-anchored zoom), so zooming
@@ -473,11 +532,13 @@ void Floatee::paintEvent(QPaintEvent *event)
 
 void Floatee::updateEyeFollow()
 {
-    // Look direction: from the tee area center toward the cursor (the window is
-    // taller than the tee canvas to leave headroom for the over-head bubble).
+    // Look direction: from the tee area center toward the cursor. In fullscreen
+    // canvas mode the tee centre is in screen coordinates (m_localTeePos).
     const QPoint g = QCursor::pos();
-    const QPointF c(pos().x() + m_teePos.x() + ExecTeeDrawer.canvasSize() / 2.0,
-                    pos().y() + m_teePos.y() + ExecTeeDrawer.canvasSize() / 2.0);
+    const int cs = ExecTeeDrawer.canvasSize();
+    const QPointF c = m_fullscreenCanvas
+        ? m_localTeePos + QPointF(cs / 2.0, cs / 2.0)
+        : QPointF(pos()) + m_teePos + QPointF(cs / 2.0, cs / 2.0);
     QPointF d = QPointF(g) - c;
     const float len = std::hypot(d.x(), d.y());
     float dirX = 1.0f, dirY = 0.0f;
@@ -522,6 +583,16 @@ void Floatee::updateEyeFollow()
             showEmoticonOnTee(teer::EMOTICON_HEARTS);
     }
     m_petting = petting;
+
+    // M2：联机时上报眼睛状态（鼠标相对本地 Tee 画布中心偏移 + 眼睛类型）
+    if (m_multi && m_multi->isConnected() && m_multi->inRoom()) {
+        const float ts = ExecTeeDrawer.teeSize();
+        const QPointF teeCenter = m_fullscreenCanvas
+            ? m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts)
+            : QPointF(pos()) + m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+        const QPointF off = QPointF(g) - teeCenter;
+        m_multi->updateLocalMouse(float(off.x()), float(off.y()), eye, eyeScale);
+    }
 
     // Skip re-render when nothing (eye, direction, eye travel or walk phase) changed.
     if (eye == RenderedEye &&
@@ -616,6 +687,10 @@ void Floatee::switchSkin(QAction *action)
 
     ExecTeeDrawer.load(path, HueShift, SatFactor, LightFactor);
     CurrentSkin = path;
+
+    // M2：联机时上报皮肤名（远端回落 default）
+    if (m_multi && m_multi->isConnected() && m_multi->inRoom())
+        m_multi->updateLocalSkin(currentSkinName());
 
     const bool wasVisible = isVisible();
     if (wasVisible)
@@ -745,6 +820,192 @@ void Floatee::mpShowJoinCode()
 void Floatee::mpRoomList()
 {
     if (m_multi) m_multi->listRooms();
+}
+
+// ── M2：全屏画布 / Peer 渲染 / 交互 ────────────────────────────────
+
+QString Floatee::currentSkinName() const
+{
+    return QFileInfo(CurrentSkin).fileName();
+}
+
+// 把远端皮肤文件名解析为本地可加载路径（内置/皮肤库/应用目录，找不到回落 default）
+static QString resolveSkinPath(const QString &name)
+{
+    if (name.isEmpty())
+        return TeeDrawer::defaultSkinPath();
+    const QString qrc = QStringLiteral(":/skins/") + name;
+    if (QFile::exists(qrc))
+        return qrc;
+    const QString lib = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                        + QStringLiteral("/skins/") + name;
+    if (QFile::exists(lib))
+        return lib;
+    const QString app = QCoreApplication::applicationDirPath() + QStringLiteral("/skins/") + name;
+    if (QFile::exists(app))
+        return app;
+    return TeeDrawer::defaultSkinPath();
+}
+
+void Floatee::onRoomChangedMp()
+{
+    if (!m_multi)
+        return;
+    if (m_multi->inRoom() && m_multi->isConnected()) {
+        // 进入房间：切到全屏透明画布（本地 + 远端 Tee 都在上面）。
+        // 用 availableGeometry 排除任务栏，避免置顶时盖住任务栏。
+        m_preFullscreenPos = pos();
+        m_localTeePos = QPointF(pos()) + m_teePos;   // 本地 Tee 屏幕坐标（左上角）
+        const QRect scr = screen()->availableGeometry();
+        setGeometry(scr);
+        m_fullscreenCanvas = true;
+        m_transparent = true;
+        setAttribute(Qt::WA_TransparentForMouseEvents, true);
+        m_hitTestTimer->start();
+        // 全屏图层窗口每帧整屏重绘开销大：眼睛跟随从 16ms 降到 33ms
+        if (EyeFollowTimer) EyeFollowTimer->setInterval(33);
+        m_peersRender.clear();
+        m_multi->addLocalRole(currentSkinName());    // 注册本地角色（含皮肤名）
+        update();
+    } else {
+        // 离开房间：恢复固定窗口
+        m_fullscreenCanvas = false;
+        m_hitTestTimer->stop();
+        m_transparent = false;
+        setAttribute(Qt::WA_TransparentForMouseEvents, false);
+        if (EyeFollowTimer) EyeFollowTimer->setInterval(16);
+        m_peersRender.clear();
+        m_dragRoleId.clear();
+        const QPoint pos2 = m_preFullscreenPos.isNull() ? pos() : m_preFullscreenPos;
+        setGeometry(QRect(pos2, QSize(kWinW, kWinH)));
+        m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
+        RenderedEye = -1;
+        updateEyeFollow();
+        update();
+    }
+}
+
+void Floatee::onPeersChangedMp()
+{
+    if (!m_multi)
+        return;
+    const auto &peers = m_multi->peers();
+    bool changed = false;   // 是否有实际视觉变化（避免每次 peer_mouse 都整屏重绘）
+    // 移除已消失的角色
+    for (auto it = m_peersRender.begin(); it != m_peersRender.end();) {
+        if (peers.contains(it.key()))
+            ++it;
+        else {
+            it = m_peersRender.erase(it);
+            changed = true;
+        }
+    }
+    // 新增/更新
+    const QPointF center = QRectF(screen()->availableGeometry()).center();
+    int idx = 0;
+    for (auto it = peers.constBegin(); it != peers.constEnd(); ++it, ++idx) {
+        const Multiplayer::PeerInfo &info = it.value();
+        auto r = m_peersRender.find(it.key());
+        if (r == m_peersRender.end()) {
+            PeerRender pr;
+            // 只创建一次（shared_ptr），避免 TeeDrawer 浅拷贝悬垂
+            pr.drawer = std::make_shared<TeeDrawer>(resolveSkinPath(info.skin));
+            pr.drawer->setFastMode(true);   // 远端轻量渲染，避免弱设备事件循环饿死
+            pr.skin = info.skin;
+            pr.pos = center - QPointF(pr.drawer->canvasSize() / 2.0, pr.drawer->canvasSize() / 2.0);
+            pr.pos += QPointF(40.0 * idx, 40.0 * idx);   // 错开避免完全重叠
+            pr.eye = info.eye;
+            pr.eyeScale = info.es;
+            const float len = std::hypot(info.dx, info.dy);
+            if (len > 1.0f)
+                pr.dir = QPointF(info.dx / len, info.dy / len);
+            // 数据就绪后立即渲染：body 静态 + eyes 动态（paintEvent 只贴图）
+            if (pr.drawer) {
+                pr.drawer->renderBody(pr.body);
+                pr.drawer->renderEyes(pr.eyes, pr.eye, pr.dir.x(), pr.dir.y(), pr.eyeScale);
+                pr.lastEye = pr.eye;
+                pr.lastEyeScale = pr.eyeScale;
+                pr.lastDir = pr.dir;
+            }
+            m_peersRender.insert(it.key(), pr);
+            changed = true;   // 新 peer 出现 → 需要重绘
+        } else {
+            r->eye = info.eye;
+            r->eyeScale = info.es;   // es=0 时眼睛回到中心
+            const float len = std::hypot(info.dx, info.dy);
+            if (len > 1.0f)
+                r->dir = QPointF(info.dx / len, info.dy / len);
+            if (r->drawer) {
+                // 皮肤变化：重载皮肤并重建静态 body 层（强制重建眼睛层）
+                if (r->skin != info.skin) {
+                    r->skin = info.skin;
+                    r->drawer->load(resolveSkinPath(info.skin));
+                    r->drawer->renderBody(r->body);
+                    r->lastEye = -1;   // 眼睛颜色/纹理来自皮肤，强制重建
+                    changed = true;    // body 重建 → 需要重绘
+                }
+                // 仅数据变化时重渲染眼睛层（带容差，避免鼠标微动反复重渲染）
+                const float dirDelta = std::hypot(r->dir.x() - r->lastDir.x(),
+                                                  r->dir.y() - r->lastDir.y());
+                if (r->eye != r->lastEye ||
+                    std::abs(r->eyeScale - r->lastEyeScale) > 0.02f ||
+                    dirDelta > 0.04f) {
+                    r->drawer->renderEyes(r->eyes, r->eye, r->dir.x(), r->dir.y(),
+                                          r->eyeScale);
+                    r->lastEye = r->eye;
+                    r->lastEyeScale = r->eyeScale;
+                    r->lastDir = r->dir;
+                    changed = true;    // 眼睛重渲染 → 需要重绘
+                }
+            }
+        }
+    }
+    // 仅在有实际视觉变化时重绘：peer_mouse 高频到达时，若眼睛在容差内
+    // （微动）或数据未变，跳过整屏重绘可显著降低弱设备负载
+    if (changed)
+        update();
+}
+
+bool Floatee::hitTestTee(const QPoint &g, QString *outRoleId, int pad) const
+{
+    const QPointF gf(g);
+    if (m_fullscreenCanvas) {
+        const int lcs = ExecTeeDrawer.canvasSize();
+        if (QRectF(m_localTeePos, QSizeF(lcs + 2 * pad, lcs + 2 * pad))
+                .adjusted(-pad, -pad, pad, pad).contains(gf)) {
+            if (outRoleId) outRoleId->clear();   // 空 = 本地 Tee
+            return true;
+        }
+    }
+    for (auto it = m_peersRender.constBegin(); it != m_peersRender.constEnd(); ++it) {
+        if (!it->drawer) continue;
+        const int cs = it->drawer->canvasSize();
+        if (cs > 0 && QRectF(it->pos, QSizeF(cs, cs)).adjusted(-pad, -pad, pad, pad).contains(gf)) {
+            if (outRoleId) *outRoleId = it.key();
+            return true;
+        }
+    }
+    return false;
+}
+
+void Floatee::onHitTestTick()
+{
+    if (!m_fullscreenCanvas)
+        return;
+    // 计算期望的穿透状态；拖拽中锁定为可交互（否则鼠标移出命中框就会
+    // 重新穿透，窗口收不到 mouseMove 导致拖拽中断）。
+    bool want;
+    if (m_dragging)
+        want = false;
+    else
+        want = !hitTestTee(QCursor::pos(), nullptr, 14);
+    // 仅在状态真正变化时 setAttribute：反复设置同一值会让 Qt 频繁做窗口
+    // 系统样式操作（WS_EX_LAYERED 上尤其重），是主线程挂起(Application Hang)
+    // 的重要来源。
+    if (want != m_transparent) {
+        m_transparent = want;
+        setAttribute(Qt::WA_TransparentForMouseEvents, want);
+    }
 }
 
 void Floatee::launchNewInstance()
@@ -970,6 +1231,49 @@ void Floatee::zoomSize(int step)
 
 void Floatee::wheelEvent(QWheelEvent *event)
 {
+    // M2 全屏画布：滚轮缩放光标悬停的 Tee，**以鼠标为锚点**（鼠标指向的 Tee 点保持不动）
+    if (m_fullscreenCanvas) {
+        const QPoint g = QCursor::pos();
+        QString roleId;
+        if (hitTestTee(g, &roleId)) {
+            const double f = event->angleDelta().y() > 0 ? 1.1 : 0.9;
+            if (roleId.isEmpty()) {
+                const int oldCs = ExecTeeDrawer.canvasSize();
+                const QPointF anchor = QPointF(g) - m_localTeePos;   // 鼠标相对 Tee 左上角
+                const double ns = qBound(0.5, SizeScale * f, 2.0);
+                if (!qFuzzyCompare(ns, SizeScale)) {
+                    SizeScale = ns;
+                    ExecTeeDrawer.setRenderScale(SizeScale);
+                    const int newCs = ExecTeeDrawer.canvasSize();
+                    if (oldCs > 0)
+                        m_localTeePos = QPointF(g) - anchor * (double(newCs) / oldCs);
+                    RenderedEye = -1;
+                    updateEyeFollow();
+                    if (SizeGroup) {
+                        for (QAction *a : SizeGroup->actions())
+                            a->setChecked(qFuzzyCompare(a->data().toDouble(), SizeScale));
+                    }
+                    Setup["Size"] = SizeScale;
+                    JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+                }
+            } else {
+                auto &pr = m_peersRender[roleId];
+                if (pr.drawer) {
+                    const int oldCs = pr.drawer->canvasSize();
+                    const QPointF anchor = QPointF(g) - pr.pos;
+                    pr.scale = qBound(0.5f, pr.scale * float(f), 2.0f);
+                    pr.drawer->setRenderScale(pr.scale);
+                    const int newCs = pr.drawer->canvasSize();
+                    if (oldCs > 0)
+                        pr.pos = QPointF(g) - anchor * (double(newCs) / oldCs);
+                }
+                update();
+            }
+        }
+        event->accept();
+        return;
+    }
+
     // Mouse-wheel zoom. Deliberately NOT "delta / 120 steps": one wheel event
     // moves exactly one level (even if a fast/high-resolution wheel bundles
     // several notches of delta), so the zoom stays calm and predictable.

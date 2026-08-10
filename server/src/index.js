@@ -29,8 +29,11 @@ function attach(session, transport) {
   logger.info('conn_open', { connId: session.connId, total: totalConns });
 
   transport.onClose(() => {
-    if (session.closed) return;
-    session.closed = true;
+    // 用独立的 cleaned 标志：session.close()（如握手失败 device_busy 时）会
+    // 置 closed=true，但连接仍要从表里移除，否则会残留导致同设备后续
+    // 一直 device_busy。
+    if (session.cleaned) return;
+    session.cleaned = true;
     rooms.leaveRoom(session, 'disconnected');
     store.removeConnection(session);
     logger.info('conn_close', { connId: session.connId, clientId: session.clientId });

@@ -7,12 +7,23 @@
 #include <QTimer>
 #include "net/netclient.h"
 
-// 联机控制器（M1）：封装 NetClient，管理连接状态、房间状态、成员列表，
-// 供托盘 Multiplayer 子菜单与后续渲染层使用。
+// 联机控制器（M1 连接/房间 + M2 角色/Pers）：封装 NetClient，管理连接状态、
+// 房间状态、角色(Peer)表，供托盘菜单与渲染层使用。
 class Multiplayer : public QObject
 {
     Q_OBJECT
 public:
+    // 远端角色信息（渲染层据此显示）
+    struct PeerInfo {
+        QString roleId;
+        QString roleName;
+        QString skin;
+        float dx = 0.0f;      // 鼠标相对其 Tee 中心偏移（眼睛方向）
+        float dy = 0.0f;
+        int eye = 0;          // 眼睛类型 0..4
+        float es = 0.0f;      // 眼睛偏移幅度（0=居中），与本地 eyeScale 一致
+    };
+
     explicit Multiplayer(QObject *parent = nullptr);
 
     // 初始化身份（clientId 通常用 profile 名，deviceId 首次生成后持久化）
@@ -30,12 +41,19 @@ public:
     void leaveRoom();
     void listRooms();
 
+    // 本地角色（M2）
+    void addLocalRole(const QString &skinName);     // 加入房间后注册本地角色
+    void updateLocalSkin(const QString &skinName);  // 皮肤变更上报
+    void updateLocalMouse(float dx, float dy, int eye, float es); // 眼睛状态上报（节流）
+
     // 状态
     bool inRoom() const { return !m_roomId.isEmpty(); }
     QString roomId() const { return m_roomId; }
     QString joinCode() const { return m_joinCode; }
     QString ownerToken() const { return m_ownerToken; }
-    int memberCount() const { return m_members.size(); }
+    int memberCount() const { return m_peers.size(); }
+    QString localRoleId() const { return m_clientId + QStringLiteral("/0"); }
+    const QHash<QString, PeerInfo> &peers() const { return m_peers; }
 
 signals:
     // UI 提示（标题/文本/是否警告）
@@ -44,6 +62,8 @@ signals:
     void statusChanged(const QString &text);
     // 房间状态变化（成员进出/进入离开）
     void roomChanged();
+    // 角色表变化（加入/离开/皮肤/眼睛）→ 渲染层刷新
+    void peersChanged();
     // 房间列表查询结果
     void roomListReceived(const QList<QJsonObject> &rooms);
 
@@ -60,6 +80,7 @@ private:
     void clearRoom();
     void startReconnect();
     void stopReconnect();
+    void upsertPeer(const QJsonObject &member);
 
     NetClient *m_client = nullptr;
     QTimer *m_reconnectTimer = nullptr;
@@ -76,7 +97,12 @@ private:
     QString m_roomId;
     QString m_joinCode;
     QString m_ownerToken;
-    QList<QJsonObject> m_members;
+    QHash<QString, PeerInfo> m_peers;   // roleId -> PeerInfo（远端角色）
+    bool m_localRoleReady = false;      // 收到 role_added 前不上报 mouse/skin（防时序竞争）
+    qint64 m_lastMouseSent = 0;
+    float m_lastDx = 0.0f, m_lastDy = 0.0f;
+    int m_lastEye = -1;
+    float m_lastEs = -1.0f;
 };
 
 #endif // MULTIPLAYER_H

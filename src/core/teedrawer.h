@@ -31,6 +31,17 @@ public:
     void render(int eyeIdx, float dirX, float dirY, float walkPhase = -1.0f,
                 float eyeOffsetScale = 1.0f);
 
+    // Split-layer rendering for remote peers (online mode): the body layer
+    // (body + outline + feet) is static and only re-rendered when the skin
+    // changes, while the eyes layer is re-rendered whenever the look direction
+    // or eye type changes. Both draw into the same canvas with the same layout,
+    // so painting body then eyes composites exactly like a single full render —
+    // but each eye update costs only the small eyes region on the device that
+    // is rendering the remote peer, instead of a whole tee re-render.
+    void renderBody(QPixmap &out);
+    void renderEyes(QPixmap &out, int eyeIdx, float dirX, float dirY,
+                    float eyeOffsetScale);
+
     // Set the render scale (1.0 = the base 96×96 canvas / 72px tee). Selects
     // the mip-map level whose body region samples closest to 1:1 for the new
     // size and updates the render info; call before render() after a zoom.
@@ -43,7 +54,10 @@ public:
     // Persisted by the host (default.json "Feather") and adjustable via tray menu.
     void setFeatherStrength(int strength) { m_featherStrength = qBound(0, strength, 2); }
     int featherStrength() const { return m_featherStrength; }
-
+    // Fast mode (no SSAA / no feather): used for remote peers on weak devices,
+    // where per-frame full-quality rendering can starve the event loop.
+    void setFastMode(bool on) { m_fastMode = on; }
+    bool fastMode() const { return m_fastMode; }
     QPixmap SkinFile;
     QPixmap Tee;       // full tee (body + feet + eyes), tee_render layout
 
@@ -69,6 +83,7 @@ private:
     int m_canvasSize = BASE_CANVAS_SIZE;
     float m_teeSize = BASE_TEE_SIZE;
     int m_featherStrength = 1;
+    bool m_fastMode = false;
 
     // Mip-map chain of the skin atlas (m_mips[0] = largest). Each level is a
     // clean 2× low-pass of the previous one; the renderer samples the level
@@ -90,6 +105,9 @@ private:
     // `strength` = number of 3×3 passes (0 = none, 2 = stronger).
     static QPixmap featherAlpha(const QPixmap &src, int strength);
     static teer::EEmote mapEye(int eyeIdx);
+    // Render the given layer set (TEE_PREVIEW_LAYER_*) into `out`.
+    void renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX, float dirY,
+                      const teer::CAnimState *pAnim = nullptr);
     void renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
                         bool drawEyes, bool drawFeet,
                         const teer::CAnimState *pAnim = nullptr);

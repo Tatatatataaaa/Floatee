@@ -18,7 +18,19 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
 - **客户端多人方案**（2026-08-10 定稿）：**全屏透明画布 + 本地自由摆放**（位置/大小不同步）+ **眼睛状态同步**（协议 `mouse`/`peer_mouse`：`dx/dy` 鼠标偏移 + `eye` 眼睛类型，远端眼睛=同步类型+方向）+ 表情/皮肤事件；**动态点击穿透**（光标命中 Tee 才可交互）；Peer 由各联机进程直接管理；托盘图标只显示本地 Tee；**表情圆盘沿用 DDNet `CEmoticon` 方案**（外环 16 表情+内环 6 眼睛、角度/半径分层、弹簧+reveal 动画，参考 `EMOTICON_WHEEL.md`，已纳入版本控制）；**交互定制：右键在本地 Tee 上打开圆盘（中心=本地 Tee 中心）+ 点击式提交，热键作附加方案（默认不绑定，设置中可配）；右键切眼功能关闭（眼睛走圆盘内环）；远端 Tee 右键走独立管理菜单（隐藏/重置/踢出，踢出需房主权限 ownerToken）** + 数字键 + 托盘菜单；**每设备限 1 个联机进程**（deviceId）；**布局不做持久化**（每次重新摆放，新/重连 Tee 屏幕中央+默认缩放）；**联机新 git 分支屏蔽 WSH 与 Eye Care**
 - **多人渲染**：单窗口全屏画布（规避本机第二个图层窗口不合成问题）
 - **里程碑**：M0 Node.js 服务器（协议/凭证/自动管理/admin/单测）→ M1 客户端连接+房间UI → M2 全屏画布多人渲染 → M3 皮肤同步 → M4 表情（圆盘） → M5 设置打磨（聊天延期）
-- **状态（2026-08-10）**：**M0 完成**（online 分支、WSH/EyeCare 屏蔽、Node.js 服务器 `server/` 19/19 单测 + TCP 端到端、客户端 NetClient）；**M1 完成**——`Multiplayer` 控制器（src/multiplayer/，连接/房间/重连/deviceId）+ 托盘 **Multiplayer 子菜单**（Connect.../Disconnect/Create Room/Join Room.../Show Join Code/Room List/Status 行）、deviceId 持久化（device.json）、服务器地址持久化（default.json multiplayer.server）、指数退避重连、移除临时 Network Test；编译通过、运行正常；**M1 修复**：deviceId 长度上限放宽（36 字符 UUID，`maxIdLen=64`）；`device_busy` 时客户端停止自动重连 + 服务器握手失败主动关闭连接（消除反复弹窗）；客户端加 10s 心跳 ping（防服务器 30s 无消息踢出触发重连循环）；**clientId 唯一化**（`profile + deviceId 前8位`，如 `floatee-c8f6287c`）——修复多设备默认 profile 同名导致房间成员表互相覆盖（实测房间 aASwKY 两设备加入但 members=1，修复后应为 2）。局域网 WiFi 联机验证通过（0.0.0.0 监听 + 防火墙放行）。**下一步 M2 多人渲染**
+- **状态（2026-08-10）**：**M0 完成**（online 分支、WSH/EyeCare 屏蔽、Node.js 服务器 `server/` 19/19 单测 + TCP 端到端、客户端 NetClient）；**M1 完成**——`Multiplayer` 控制器（src/multiplayer/，连接/房间/重连/deviceId）+ 托盘 **Multiplayer 子菜单**（Connect.../Disconnect/Create Room/Join Room.../Show Join Code/Room List/Status 行）、deviceId 持久化（device.json）、服务器地址持久化（default.json multiplayer.server）、指数退避重连、移除临时 Network Test；编译通过、运行正常；**M1 修复**：deviceId 长度上限放宽（36 字符 UUID，`maxIdLen=64`）；`device_busy` 时客户端停止自动重连 + 服务器握手失败主动关闭连接（消除反复弹窗）；客户端加 10s 心跳 ping（防服务器 30s 无消息踢出触发重连循环）；**clientId 唯一化**（`profile + deviceId 前8位`，如 `floatee-c8f6287c`）——修复多设备默认 profile 同名导致房间成员表互相覆盖（实测房间 aASwKY 两设备加入但 members=1，修复后应为 2）。局域网 WiFi 联机验证通过（0.0.0.0 监听 + 防火墙放行）。
+
+**M2 多人渲染（已完成，2026-08-10）**：
+- `Multiplayer` 扩展角色表 + `add_role`/`skin_update`/`mouse` 上报 + `peersChanged` 信号；`role_added` 确认后本地角色才上报（修复时序竞态）；`es`（眼睛偏移幅度）随 mouse 同步
+- `Floatee` 接入**全屏透明画布**（进房间切全屏 `availableGeometry`、本地/远端 Tee 屏幕坐标摆放）+ **动态点击穿透**（命中 Tee 才可交互、仅状态变化时 `setAttribute`）+ 本地拖拽/滚轮缩放任意 Tee + 眼睛状态同步 + 皮肤名同步（切肤上报）
+- **弱设备稳定性优化**（B 设备 4 核，CPU 20%→4%、卡顿消除）：
+  - **眼睛分离渲染**：远端 Tee 的 body（身体+轮廓+脚）静态缓存、皮肤变化才重建；眼睛独立小图层，每次眼睛/方向变化只重渲染眼睛区域（`TeeDrawer::renderBody/renderEyes`，基于 `TEE_PREVIEW_LAYER_*`，渲染器无 clip 故两层绝对对齐）
+  - **渲染容差**：方向变化 <0.04f / 眼睛偏移 <0.02f 不重渲染（与本地一致，鼠标微动不触发渲染）
+  - **条件重绘**：仅实际视觉变化（增删/皮肤重建/眼睛重渲染）才 `update()`，避免每次收到 mouse 都整屏重绘
+  - **同步频率**：mouse 上报 60ms 节流（~16.7/s，服务器上限 20/s）；已验证 30fps 同步受延迟限制无收益，16fps 为均衡点
+  - `setFastMode`：远端渲染关 SSAA/羽化
+- **双设备实测通过**：A/B 设备互见对方 Tee、可拖动/缩放/眼睛跟随；B 端卡顿（Application Hang）问题已解决（根因：过度重渲染 + 反复 `setAttribute`，非性能不足）
+- **下一步 M3 皮肤同步细化 / M4 表情（DDNet 圆盘）**
 
 ---
 
@@ -431,4 +443,4 @@ cmake --build build_android
 
 ---
 
-*最后更新: 2026-08-09（表情收尾 + 鼠标滚轮缩放）*
+*最后更新: 2026-08-10（M2 多人渲染完成 + 弱设备稳定性优化）*

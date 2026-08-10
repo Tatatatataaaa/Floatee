@@ -114,13 +114,42 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
                                bool drawEyes, bool drawFeet,
                                const teer::CAnimState *pAnim)
 {
+    int flags = teer::TEE_PREVIEW_LAYER_BODY | teer::TEE_PREVIEW_LAYER_OUTLINE;
+    if (drawFeet)  flags |= teer::TEE_PREVIEW_LAYER_FEET;
+    if (drawEyes)  flags |= teer::TEE_PREVIEW_LAYER_EYES;
+    renderLayers(out, flags, eyeIdx, dirX, dirY, pAnim);
+}
+
+void TeeDrawer::renderBody(QPixmap &out)
+{
+    // Static layer set: body + outline + feet (no eyes). Only re-rendered when
+    // the skin changes.
+    const int flags = teer::TEE_PREVIEW_LAYER_BODY | teer::TEE_PREVIEW_LAYER_OUTLINE
+                    | teer::TEE_PREVIEW_LAYER_FEET;
+    renderLayers(out, flags, 0, 0.0f, 1.0f, teer::CAnimState::GetIdle());
+}
+
+void TeeDrawer::renderEyes(QPixmap &out, int eyeIdx, float dirX, float dirY,
+                           float eyeOffsetScale)
+{
+    // Eyes layer only — a couple of small quads, re-rendered on every eye/dir
+    // change instead of re-rendering the whole tee.
+    m_info.m_Skin6EyeOffsetScale = eyeOffsetScale;
+    renderLayers(out, teer::TEE_PREVIEW_LAYER_EYES, eyeIdx, dirX, dirY,
+                 teer::CAnimState::GetIdle());
+}
+
+void TeeDrawer::renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX,
+                             float dirY, const teer::CAnimState *pAnim)
+{
     // 2×2 supersampling (CPU analogue of MSAA): render into a RENDER_SSAA×
     // larger canvas with the tee also scaled up, then bilinearly downscale to
     // the target size. This smooths the alpha edges — small zoom levels look
     // jaggy because the edge transition spans only 1–2 px, large levels look
     // smooth because it spans many more.
-    const float renderTee = m_teeSize * RENDER_SSAA;
-    const int renderCs = m_canvasSize * RENDER_SSAA;
+    const int ssaa = m_fastMode ? 1 : RENDER_SSAA;
+    const float renderTee = m_teeSize * ssaa;
+    const int renderCs = m_canvasSize * ssaa;
 
     QPixmap big(renderCs, renderCs);
     big.fill(Qt::transparent);
@@ -136,9 +165,6 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
         pAnim = teer::CAnimState::GetIdle();
 
     // Configure render flags: control which layers are drawn
-    int flags = teer::TEE_PREVIEW_LAYER_BODY | teer::TEE_PREVIEW_LAYER_OUTLINE;
-    if (drawFeet)  flags |= teer::TEE_PREVIEW_LAYER_FEET;
-    if (drawEyes)  flags |= teer::TEE_PREVIEW_LAYER_EYES;
     m_info.m_TeeRenderFlags = flags;
 
     // Authentic tee_render layout: GetRenderTeeOffsetToRenderedTee returns the
@@ -156,7 +182,8 @@ void TeeDrawer::renderToPixmap(QPixmap &out, int eyeIdx, float dirX, float dirY,
                      Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     // Feather the alpha edge so small sizes render with smooth, anti-aliased
     // outlines instead of hard ~0.5px jaggies (opaque interiors stay crisp).
-    if (m_featherStrength > 0)
+    // Fast mode skips it (remote peers on weak devices).
+    if (m_featherStrength > 0 && !m_fastMode)
         out = featherAlpha(out, m_featherStrength);
 
     m_info.m_Size = savedSize;
