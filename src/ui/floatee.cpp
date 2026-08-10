@@ -172,7 +172,7 @@ void Floatee::Initialize()
 
     TrayMenu = new FloateeMenu();
     // 极简动态风格（与表情圆盘一致）：半透明灰色圆角背景 + 深色字体
-    // 应用于全局 QMenu，覆盖托盘主菜单与所有子菜单（Skin/Eyes/Emoticon 等）
+    // 全局 QSS：菜单 + 对话框 + 输入框 + 按钮 + 滑块等交互控件统一风格
     qApp->setStyleSheet(QStringLiteral(
         "QMenu {"
         "  background-color: rgba(250,250,253,220);"
@@ -191,6 +191,36 @@ void Floatee::Initialize()
         "QMenu::item:disabled { color: rgba(20,20,20,110); }"
         "QMenu::separator { height: 1px; background: rgba(150,150,168,80); margin: 4px 12px; }"
         "QMenu::indicator { width: 14px; height: 14px; margin-left: 4px; }"
+        "/* 对话框 / 弹窗 */"
+        "QMessageBox, QInputDialog, QDialog {"
+        "  background-color: rgba(248,248,252,245);"
+        "}"
+        "QLabel { color: #1a1a1a; background: transparent; }"
+        "/* 输入框 */"
+        "QLineEdit {"
+        "  background: rgba(255,255,255,235);"
+        "  border: 1px solid rgba(140,140,160,120);"
+        "  border-radius: 6px;"
+        "  padding: 4px 8px;"
+        "  color: #141414;"
+        "  selection-background-color: rgba(120,165,255,140);"
+        "}"
+        "QLineEdit:focus { border: 1px solid rgba(120,165,255,210); }"
+        "/* 按钮 */"
+        "QPushButton {"
+        "  background: rgba(120,165,255,55);"
+        "  border: 1px solid rgba(120,165,255,130);"
+        "  border-radius: 6px;"
+        "  padding: 5px 16px;"
+        "  color: #141414;"
+        "}"
+        "QPushButton:hover { background: rgba(120,165,255,105); }"
+        "QPushButton:pressed { background: rgba(120,165,255,150); }"
+        "QPushButton:disabled { color: rgba(20,20,20,110); background: rgba(120,165,255,30); }"
+        "/* 滑块（Color Adjust 等） */"
+        "QSlider::groove:horizontal { height: 6px; background: rgba(150,150,168,90); border-radius: 3px; }"
+        "QSlider::sub-page:horizontal { background: rgba(120,165,255,160); border-radius: 3px; }"
+        "QSlider::handle:horizontal { width: 14px; margin: -4px 0; border-radius: 7px; background: rgba(120,165,255,210); }"
     ));
     AlwaysOnTopAction = TrayMenu->addAction("Always on Top");
     AlwaysOnTopAction->setCheckable(true);
