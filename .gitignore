@@ -4,6 +4,7 @@ build_win/
 *.app
 .DS_Store
 *.user
+*.pro.user*
 extracted/
 tee_render/build/
 build_android/
