@@ -95,7 +95,7 @@ export function validate(msg, cfg) {
       if (r1) return r1;
       if (typeof msg.dx !== 'number' || typeof msg.dy !== 'number' || !Number.isFinite(msg.dx) || !Number.isFinite(msg.dy))
         return fail('bad_field', 'dx/dy 非法');
-      if (msg.eye !== undefined && (!Number.isInteger(msg.eye) || msg.eye < 0 || msg.eye > 4))
+      if (msg.eye !== undefined && (!Number.isInteger(msg.eye) || msg.eye < 0 || msg.eye > 5))
         return fail('bad_field', 'eye 非法');
       if (msg.es !== undefined && (typeof msg.es !== 'number' || !Number.isFinite(msg.es) || msg.es < 0 || msg.es > 3))
         return fail('bad_field', 'es 非法');
