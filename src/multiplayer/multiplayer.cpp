@@ -130,7 +130,6 @@ void Multiplayer::updateLocalMouse(float dx, float dy, int eye, float es)
 {
     if (!m_localRoleReady)
         return;
-    // 值无变化时不上报（鼠标不动则完全静默，大幅降低对端负载）
     if (dx == m_lastDx && dy == m_lastDy && eye == m_lastEye && es == m_lastEs)
         return;
     // 节流：每 60ms 最多发一次（~16.7/s，低于服务器上限 20/s，避免撞限流）。
@@ -148,6 +147,29 @@ void Multiplayer::updateLocalMouse(float dx, float dy, int eye, float es)
         {QStringLiteral("dy"), double(dy)},
         {QStringLiteral("eye"), eye},
         {QStringLiteral("es"), double(es)},
+    });
+}
+
+void Multiplayer::sendEmoticon(int index)
+{
+    if (!m_localRoleReady)
+        return;
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("emoticon")},
+        {QStringLiteral("roleId"), localRoleId()},
+        {QStringLiteral("index"), index},
+    });
+}
+
+void Multiplayer::kickMember(const QString &clientId)
+{
+    if (m_ownerToken.isEmpty() || m_roomId.isEmpty())
+        return;                       // 非房主或不在房间
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("kick_member")},
+        {QStringLiteral("roomId"), m_roomId},
+        {QStringLiteral("ownerToken"), m_ownerToken},
+        {QStringLiteral("targetClientId"), clientId},
     });
 }
 
@@ -309,6 +331,22 @@ void Multiplayer::onMessage(const QJsonObject &msg)
             it->es = float(msg.value(QStringLiteral("es")).toDouble());
             emit peersChanged();
         }
+        return;
+    }
+    if (type == QLatin1String("peer_emoticon")) {
+        // M4：远端 Tee 表情 → 渲染层在其上方播放
+        emit emoticonReceived(msg.value(QStringLiteral("roleId")).toString(),
+                              msg.value(QStringLiteral("index")).toInt(0));
+        return;
+    }
+    if (type == QLatin1String("peer_kicked")) {
+        // M4：被房主踢出房间
+        emit notify(QStringLiteral("Multiplayer"),
+                    QStringLiteral("你已被房主移出房间"), true);
+        clearRoom();
+        emit roomChanged();
+        emit peersChanged();
+        updateStatus();
         return;
     }
     if (type == QLatin1String("room_list")) {

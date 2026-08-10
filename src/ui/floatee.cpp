@@ -261,6 +261,15 @@ void Floatee::Initialize()
     TrayMenu->addMenu(FeatherMenu);
     TrayMenu->addMenu(SkinMenu);
 
+    // ── Emoticon submenu（M4：16 个表情，点击本地显示 + 联机发送）──
+    EmoticonMenu = new QMenu("Emoticon");
+    for (int i = 0; i < teer::NUM_EMOTICONS; ++i)
+        EmoticonMenu->addAction(QStringLiteral("Emoticon %1").arg(i + 1))->setData(i);
+    connect(EmoticonMenu, &QMenu::triggered, this, [this](QAction *a) {
+        sendLocalEmoticon(a->data().toInt());
+    });
+    TrayMenu->addMenu(EmoticonMenu);
+
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
 
@@ -320,9 +329,10 @@ void Floatee::Initialize()
             if (text.isEmpty()) text = QStringLiteral("（当前无可加入房间）");
             QMessageBox::information(this, QStringLiteral("Room List"), text);
         });
-        // M2：进出房间切换全屏画布；Peer 表变化刷新渲染
+        // M2：进出房间切换全屏画布；Tee 表变化刷新渲染；M4 表情接收
         connect(m_multi, &Multiplayer::roomChanged, this, &Floatee::onRoomChangedMp);
         connect(m_multi, &Multiplayer::peersChanged, this, &Floatee::onPeersChangedMp);
+        connect(m_multi, &Multiplayer::emoticonReceived, this, &Floatee::onEmoticonReceivedMp);
         m_hitTestTimer = new QTimer(this);
         m_hitTestTimer->setInterval(16);
         connect(m_hitTestTimer, &QTimer::timeout, this, &Floatee::onHitTestTick);
@@ -356,6 +366,7 @@ void Floatee::Initialize()
     if (!EmoticonWin->loadAtlas(QPixmap(QStringLiteral(":/main/emoticons.png"))))
         qWarning() << "Floatee: failed to load emoticon atlas";
     connect(EmoticonWin, &EmoticonWindow::frameChanged, this, qOverload<>(&QWidget::update));
+    m_emoticonWheel = new EmoticonWheel(this);   // M4：表情圆盘（全屏画布 overlay）
     EmoticonRandomTimer = new QTimer(this);
     EmoticonRandomTimer->setInterval(10000);   // check every 10s
     connect(EmoticonRandomTimer, &QTimer::timeout, this, &Floatee::onRandomEmoticonTick);
@@ -386,7 +397,18 @@ void Floatee::mousePressEvent(QMouseEvent *event)
 {
     // M2 全屏画布：左键拖拽命中的 Tee（本地或远端，仅本地摆放）；右键 M4 表情圆盘
     if (m_fullscreenCanvas) {
-        if (event->button() == Qt::LeftButton) {
+        if (event->button() == Qt::RightButton) {
+            // M4：右键本地 Tee → 表情圆盘；右键远端 Tee → 管理菜单
+            const QPoint g = event->globalPosition().toPoint();
+            QString roleId;
+            if (hitTestTee(g, &roleId)) {
+                if (roleId.isEmpty())
+                    openEmoticonWheel();
+                else
+                    showPeerContextMenu(roleId, g);
+            }
+        } else if (event->button() == Qt::LeftButton &&
+                   !(m_emoticonWheel && m_emoticonWheel->isOpen())) {
             const QPoint g = event->globalPosition().toPoint();
             QString roleId;
             if (hitTestTee(g, &roleId)) {
@@ -425,7 +447,11 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 {
     // M2 全屏画布：拖拽 Tee（本地/远端）仅改变本地摆放
     if (m_fullscreenCanvas) {
-        if (m_dragging) {
+        if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
+            // M4：圆盘打开时更新悬停高亮
+            m_emoticonWheel->setMousePos(QPointF(event->globalPosition().toPoint()));
+            update();
+        } else if (m_dragging) {
             const QPointF np = QPointF(event->globalPosition().toPoint()) - m_dragOffset;
             if (m_dragRoleId.isEmpty()) {
                 m_localTeePos = np;
@@ -452,6 +478,32 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_fullscreenCanvas) {
+        if (m_emoticonWheel && m_emoticonWheel->isOpen() && event->button() == Qt::LeftButton) {
+            // M4：圆盘点击提交（表情 / 眼睛 / 取消）
+            const EmoticonWheel::Result r =
+                m_emoticonWheel->submitAt(QPointF(event->globalPosition().toPoint()));
+            m_emoticonWheel->close();
+            unsetCursor();
+            switch (r.hit) {
+            case EmoticonWheel::Hit::Emoticon:
+                sendLocalEmoticon(r.index);
+                break;
+            case EmoticonWheel::Hit::Eye: {
+                // 内环 6 眼睛：NORMAL/HAPPY/ANGRY/PAIN/SURPRISE/BLINK（BLINK→NORMAL）
+                static const int kEyeMap[6] = { 0, 1, 2, 3, 4, 0 };
+                CurrentEye = kEyeMap[r.index];
+                RenderedEye = -1;
+                updateEyeFollow();   // 眼睛变化随 mouse 消息同步到远端
+                if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
+                    EyeGroup->actions()[CurrentEye]->setChecked(true);
+                break;
+            }
+            default:
+                break;   // Cancel / None → 仅关闭
+            }
+            update();
+            return;
+        }
         m_dragging = false;
         m_dragRoleId.clear();
         return;
@@ -461,6 +513,29 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
     LastWalkPhase = -2.0f;
     updateEyeFollow();
     QMainWindow::mouseReleaseEvent(event);
+}
+
+void Floatee::keyPressEvent(QKeyEvent *event)
+{
+    if (m_fullscreenCanvas) {
+        if (event->key() == Qt::Key_Escape) {
+            if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
+                m_emoticonWheel->close();
+                unsetCursor();
+                update();
+            }
+            event->accept();
+            return;
+        }
+        // M4：数字键 0-9 → 表情 index 0-9（附加快捷）
+        const int idx = event->key() - Qt::Key_0;
+        if (idx >= 0 && idx <= 9) {
+            sendLocalEmoticon(idx);
+            event->accept();
+            return;
+        }
+    }
+    QMainWindow::keyPressEvent(event);
 }
 
 void Floatee::changeEvent(QEvent *event)
@@ -499,7 +574,7 @@ void Floatee::paintEvent(QPaintEvent *event)
         QPainter p(this);
         p.drawPixmap(qRound(m_localTeePos.x()), qRound(m_localTeePos.y()), ExecTeeDrawer.Tee);
         for (const auto &pr : m_peersRender) {
-            if (!pr.drawer || pr.drawer->canvasSize() <= 0)
+            if (!pr.drawer || pr.drawer->canvasSize() <= 0 || pr.hidden)
                 continue;
             // 分离渲染：body 静态（皮肤变化才重建），eyes 在数据变化时重渲染
             // （onPeersChangedMp），这里只贴图
@@ -508,6 +583,13 @@ void Floatee::paintEvent(QPaintEvent *event)
             if (!pr.eyes.isNull())
                 p.drawPixmap(qRound(pr.pos.x()), qRound(pr.pos.y()), pr.eyes);
         }
+        // M4：多 Tee 并行表情（本地 + 每个远端 Tee）
+        if (EmoticonWin && EmoticonWin->hasAny())
+            paintEmoticonsFullscreen(p);
+        // M4：表情圆盘 overlay
+        if (m_emoticonWheel && m_emoticonWheel->isOpen())
+            m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
+                                   ExecTeeDrawer.SkinFile);
         QMainWindow::paintEvent(event);
         return;
     }
@@ -619,14 +701,102 @@ void Floatee::triggerRandomEmoticon()
     showEmoticonOnTee(idx);
 }
 
-void Floatee::showEmoticonOnTee(int index)
+void Floatee::showEmoticonOnTee(int index, const QString &key)
 {
     if (!EmoticonWin)
         return;
+    QPointF teeCenter;
+    float teeSize = ExecTeeDrawer.teeSize();
+    if (key.isEmpty()) {
+        const int cs = ExecTeeDrawer.canvasSize();
+        teeCenter = m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * teeSize);
+    } else {
+        const auto it = m_peersRender.constFind(key);
+        if (it == m_peersRender.constEnd() || !it->drawer)
+            return;
+        const int pcs = it->drawer->canvasSize();
+        const float pts = it->drawer->teeSize();
+        teeSize = pts;
+        teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
+    }
+    EmoticonWin->showEmoticon(key, index, teeSize, teeCenter);
+}
+
+void Floatee::sendLocalEmoticon(int index)
+{
+    if (index < 0 || index >= teer::NUM_EMOTICONS)
+        return;
+    showEmoticonOnTee(index);   // 本地显示
+    // M4：联机广播（服务器 emoticonPerSec=5 限流，超限静默）
+    if (m_multi && m_multi->isConnected() && m_multi->inRoom())
+        m_multi->sendEmoticon(index);
+}
+
+void Floatee::openEmoticonWheel()
+{
+    if (!m_emoticonWheel || !m_fullscreenCanvas)
+        return;
     const int cs = ExecTeeDrawer.canvasSize();
     const float ts = ExecTeeDrawer.teeSize();
-    const QPointF teeCenter = m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
-    EmoticonWin->showEmoticon(index, ts, teeCenter);
+    const QPointF teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+    m_emoticonWheel->open(teeCenter);
+    setCursor(Qt::CrossCursor);
+    update();
+}
+
+void Floatee::onEmoticonReceivedMp(const QString &roleId, int index)
+{
+    // 全屏画布内，在对应远端 Tee 上方播放表情
+    if (m_fullscreenCanvas && EmoticonWin)
+        showEmoticonOnTee(index, roleId);
+}
+
+void Floatee::paintEmoticonsFullscreen(QPainter &p)
+{
+    const int box = 240;   // 表情局部渲染盒（以 Tee 中心为中心）
+    for (const QString &key : EmoticonWin->activeKeys()) {
+        QPointF teeCenter;
+        if (key.isEmpty()) {
+            const int cs = ExecTeeDrawer.canvasSize();
+            const float ts = ExecTeeDrawer.teeSize();
+            teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+        } else {
+            const auto it = m_peersRender.constFind(key);
+            if (it == m_peersRender.constEnd() || !it->drawer || it->hidden)
+                continue;
+            const int pcs = it->drawer->canvasSize();
+            const float pts = it->drawer->teeSize();
+            teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
+        }
+        QPixmap frame(box, box);
+        if (EmoticonWin->renderFrame(frame, key, QPointF(box / 2.0, box / 2.0)))
+            p.drawPixmap(qRound(teeCenter.x() - box / 2.0), qRound(teeCenter.y() - box / 2.0), frame);
+    }
+}
+
+void Floatee::showPeerContextMenu(const QString &roleId, const QPoint &g)
+{
+    auto it = m_peersRender.find(roleId);
+    if (it == m_peersRender.end())
+        return;
+    QMenu menu(this);
+    const bool isOwner = m_multi && !m_multi->ownerToken().isEmpty();
+    const QString clientId = roleId.left(roleId.indexOf(QLatin1Char('/')));   // roleId: <clientId>/0
+    QAction *hideAct = menu.addAction(it->hidden ? QStringLiteral("显示") : QStringLiteral("隐藏"));
+    QAction *resetAct = menu.addAction(QStringLiteral("重置位置"));
+    QAction *kickAct = isOwner ? menu.addAction(QStringLiteral("踢出")) : nullptr;
+    QAction *sel = menu.exec(g);
+    if (sel == hideAct) {
+        it->hidden = !it->hidden;
+        update();
+    } else if (sel == resetAct) {
+        const QPointF center = QRectF(screen()->availableGeometry()).center();
+        const int cs = it->drawer ? it->drawer->canvasSize() : 96;
+        it->pos = center - QPointF(cs / 2.0, cs / 2.0);
+        update();
+    } else if (sel == kickAct && m_multi && !clientId.isEmpty()) {
+        m_multi->kickMember(clientId);   // 需房主权限（菜单项仅房主显示）
+    }
 }
 
 void Floatee::onRandomEmoticonTick()
@@ -893,6 +1063,8 @@ void Floatee::onRoomChangedMp()
         update();
     } else {
         // 离开房间：恢复固定窗口
+        if (EmoticonWin) EmoticonWin->hideEmoticon();
+        if (m_emoticonWheel) { m_emoticonWheel->close(); unsetCursor(); }
         m_fullscreenCanvas = false;
         m_hitTestTimer->stop();
         m_transparent = false;
@@ -1002,7 +1174,7 @@ bool Floatee::hitTestTee(const QPoint &g, QString *outRoleId, int pad) const
         }
     }
     for (auto it = m_peersRender.constBegin(); it != m_peersRender.constEnd(); ++it) {
-        if (!it->drawer) continue;
+        if (!it->drawer || it->hidden) continue;
         const int cs = it->drawer->canvasSize();
         if (cs > 0 && QRectF(it->pos, QSizeF(cs, cs)).adjusted(-pad, -pad, pad, pad).contains(gf)) {
             if (outRoleId) *outRoleId = it.key();

@@ -30,7 +30,13 @@ Floatee 是一个跨平台桌面宠物应用，使用 Qt6 (C++/OBJC++) 编写。
   - **同步频率**：mouse 上报 60ms 节流（~16.7/s，服务器上限 20/s）；已验证 30fps 同步受延迟限制无收益，16fps 为均衡点
   - `setFastMode`：远端渲染关 SSAA/羽化
 - **双设备实测通过**：A/B 设备互见对方 Tee、可拖动/缩放/眼睛跟随；B 端卡顿（Application Hang）问题已解决（根因：过度重渲染 + 反复 `setAttribute`，非性能不足）
-- **下一步 M3 皮肤同步细化 / M4 表情（DDNet 圆盘）**
+- **M4 表情转发（已完成，2026-08-10）**：
+  - `EmoticonWindow` 重构为**多 Tee 并行表情**（key=roleId，本地=空串，各自 2 秒时钟，独立渲染盒叠加）
+  - **表情圆盘**（新 `src/ui/emoticonwheel.h/.cpp`，DDNet CEmoticon 方案）：外环 16 表情 + 内环 6 眼睛 + 中心取消；半径分层 ≤40 取消 / 40~110 眼睛 / >110 表情；`Index=round(angle/2π*Count) mod Count`；悬停放大；点击式提交
+  - 交互：**右键本地 Tee → 圆盘**（选表情发送 / 选眼睛切眼，眼睛随 mouse 消息同步远端）；**右键远端 Tee → 管理菜单**（隐藏/重置/踢出[房主权限]）；数字键 0-9 快捷发表情；托盘 Emoticon 子菜单（16 表情）
+  - 协议：`emoticon`（C→S）/ `peer_emoticon`（S→C）转发（服务器 M0 已实现，emoticonPerSec=5）；被踢出 `peer_kicked` 处理
+  - 服务器单测 19/19；编译运行正常；**双设备实测待做**
+- **下一步 M3 皮肤同步细化 / M5 设置打磨（表情快捷键对话框、wss、状态提示）**
 
 ---
 

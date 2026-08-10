@@ -12,60 +12,94 @@ bool EmoticonWindow::loadAtlas(const QPixmap &atlas)
 {
     if (atlas.isNull())
         return false;
+    m_atlas = atlas;
     m_backend.registerTexture(EMOTICON_TEX_ID, atlas);
     m_renderer.ConfigureEmoticonGrid(4, 4);   // emoticons.png is a 4×4 grid
     return true;
 }
 
-void EmoticonWindow::showEmoticon(int index, float teeSize, const QPointF &teePos)
+void EmoticonWindow::showEmoticon(const QString &key, int index, float teeSize,
+                                  const QPointF &teePos)
 {
     if (index < 0 || index >= teer::NUM_EMOTICONS)
         return;
-    m_index = index;
-    m_teeSize = teeSize;
-    m_teePos = teePos;
-    m_renderer.SetTeeSize(m_teeSize);
-    m_clock.restart();
-    updateFrame();
-    m_frameTimer.start();
+    Active a;
+    a.index = index;
+    a.teeSize = teeSize;
+    a.teePos = teePos;
+    a.clock.start();
+    m_active.insert(key, a);
+    if (!m_frameTimer.isActive())
+        m_frameTimer.start();
+    emit frameChanged();
+}
+
+void EmoticonWindow::showEmoticon(int index, float teeSize, const QPointF &teePos)
+{
+    showEmoticon(QString(), index, teeSize, teePos);
+}
+
+void EmoticonWindow::hideEmoticon(const QString &key)
+{
+    if (m_active.remove(key) != 0)
+        emit frameChanged();
 }
 
 void EmoticonWindow::hideEmoticon()
 {
+    if (m_active.isEmpty())
+        return;
+    m_active.clear();
     m_frameTimer.stop();
-    m_index = -1;
     emit frameChanged();
 }
 
 void EmoticonWindow::updateFrame()
 {
-    if (m_index < 0)
-        return;
-    if (m_clock.elapsed() / 1000.0f >= 2.0f) {   // 2-second lifetime
-        hideEmoticon();
+    bool changed = false;
+    for (auto it = m_active.begin(); it != m_active.end();) {
+        if (it->clock.elapsed() / 1000.0f >= 2.0f) {   // 2-second lifetime
+            it = m_active.erase(it);
+            changed = true;
+        } else {
+            ++it;
+        }
+    }
+    if (m_active.isEmpty()) {
+        m_frameTimer.stop();
+        if (changed)
+            emit frameChanged();
         return;
     }
     emit frameChanged();
 }
 
-bool EmoticonWindow::renderFrame(QPixmap &target, const QPointF &teePosInTarget)
+bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
+                                 const QPointF &teePosInTarget)
 {
-    if (m_index < 0)
+    const auto it = m_active.constFind(key);
+    if (it == m_active.constEnd())
         return false;
-    const float elapsed = m_clock.elapsed() / 1000.0f;
+    const float elapsed = it->clock.elapsed() / 1000.0f;
     if (elapsed >= 2.0f) {
-        hideEmoticon();
+        hideEmoticon(key);
         return false;
     }
 
     // Render the current animation frame via the pipeline.
     target.fill(Qt::transparent);
     m_backend.target = target;
+    m_renderer.SetTeeSize(it->teeSize);
     m_renderer.RenderEmoticon(teer::vec2(teePosInTarget.x(), teePosInTarget.y()),
-                              m_index, elapsed, 1.0f);
+                              it->index, elapsed, 1.0f);
     // QPixmap implicit sharing: painting into backend.target may have detached
     // it from target, so read the painted pixmap back (same pattern as
     // TeeDrawer's `out = m_backend.target`).
     target = m_backend.target;
     return true;
+}
+
+bool EmoticonWindow::renderFrame(QPixmap &target, const QPointF &teePosInTarget)
+{
+    return renderFrame(target, QString(), teePosInTarget);
 }

@@ -4,6 +4,7 @@
 #include <QMainWindow>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QKeyEvent>
 #include <QWheelEvent>
 #include <QCursor>
 #include <QTimer>
@@ -19,6 +20,7 @@
 #include "ui/windowsidehide.h"
 #include "ui/teeyes.h"
 #include "ui/emoticonwindow.h"
+#include "ui/emoticonwheel.h"
 #include "multiplayer/multiplayer.h"
 #include "core/jsonopt.h"
 #include "core/teedrawer.h"
@@ -42,6 +44,7 @@ public:
     void mouseMoveEvent(QMouseEvent *event);
     void mouseReleaseEvent(QMouseEvent *event);
     void wheelEvent(QWheelEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
     void changeEvent(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
 
@@ -51,6 +54,7 @@ public:
     QMenu *EyeMenu = nullptr;
     QMenu *SizeMenu = nullptr;
     QMenu *FeatherMenu = nullptr;
+    QMenu *EmoticonMenu = nullptr;   // M4：16 表情托盘子菜单
     QMenu *InstanceMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
     QActionGroup *EyeGroup = nullptr;
@@ -116,12 +120,14 @@ public:
         // 时重渲染；eyes（眼睛层）每次眼睛/方向变化只重渲染眼睛小区域。
         QPixmap body;
         QPixmap eyes;
+        bool hidden = false;          // M4：右键隐藏（仅本地摆放，不发送）
         // 渲染缓存：数据未变化（含容差）时跳过重渲染（降低 CPU）
         int lastEye = -1;
         float lastEyeScale = -1.0f;
         QPointF lastDir{0.0f, 0.0f};
     };
     QHash<QString, PeerRender> m_peersRender;   // roleId -> 远端 Tee 渲染
+    EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
     bool m_fullscreenCanvas = false;            // 联机全屏画布模式
     QPoint m_preFullscreenPos;                  // 进入全屏前的窗口位置
     QPointF m_localTeePos;                      // 全屏时本地 Tee 的屏幕坐标（左上角）
@@ -212,7 +218,18 @@ protected slots:
     void updateEyeFollow();
     void triggerRandomEmoticon();
     void onRandomEmoticonTick();
-    void showEmoticonOnTee(int index);
+    // 在指定 Tee 上显示表情（key 空 = 本地；否则 = 远端 roleId）
+    void showEmoticonOnTee(int index, const QString &key = QString());
+    // M4：本地发表情（显示 + 联机广播）
+    void sendLocalEmoticon(int index);
+    // M4：右键本地 Tee 打开表情圆盘
+    void openEmoticonWheel();
+    // M4：右键远端 Tee 管理菜单（隐藏/重置/踢出）
+    void showPeerContextMenu(const QString &roleId, const QPoint &g);
+    // M4：收到远端 Tee 表情
+    void onEmoticonReceivedMp(const QString &roleId, int index);
+    // M4：全屏画布内渲染所有活跃表情（本地 + 每个远端 Tee）
+    void paintEmoticonsFullscreen(QPainter &p);
 
 private:
     Ui::Floatee *ui;

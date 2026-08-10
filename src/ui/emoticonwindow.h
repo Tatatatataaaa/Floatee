@@ -5,6 +5,7 @@
 #include <QTimer>
 #include <QElapsedTimer>
 #include <QPixmap>
+#include <QHash>
 #include "core/tee_qt_backend.h"
 #include "tee_emoticon.h"
 
@@ -19,6 +20,10 @@
  * frame into a target pixmap that the host (Floatee) draws in its own window's
  * paintEvent — the tee window composites correctly, so the bubble actually
  * shows, drawn above the tee.
+ *
+ * M4 扩展：多 Tee 并行表情 —— 本地 + 每个远端 Tee 可同时播放各自的表情
+ * 动画，用 key（远端 roleId；本地 Tee 用空字符串）区分。每个表情 2 秒
+ * 生命周期，独立时钟。
  */
 class EmoticonWindow : public QObject
 {
@@ -28,21 +33,28 @@ public:
 
     // Register the emoticon atlas (emoticons.png, a 4×4 grid) as texture id 2.
     bool loadAtlas(const QPixmap &atlas);
+    // 暴露图集（供表情圆盘绘制图标用）
+    const QPixmap &atlas() const { return m_atlas; }
 
-    // Trigger a 2-second emoticon animation.
+    // Trigger a 2-second emoticon animation for the given tee.
+    //   key    : remote roleId; local tee uses the empty string
     //   index  : 0..NUM_EMOTICONS-1 (see teer::EEmoticonSprite)
     //   teeSize: current tee render size (for SetTeeSize scaling)
     //   teePos : the tee's TeePos in the square tee-canvas coordinates
-    void showEmoticon(int index, float teeSize, const QPointF &teePos);
+    void showEmoticon(const QString &key, int index, float teeSize, const QPointF &teePos);
+    void showEmoticon(int index, float teeSize, const QPointF &teePos);   // local tee
+    void hideEmoticon(const QString &key);
     void hideEmoticon();
+    bool isActive(const QString &key) const { return m_active.contains(key); }
+    bool isActive() const { return isActive(QString()); }
+    bool hasAny() const { return !m_active.isEmpty(); }
+    QList<QString> activeKeys() const { return m_active.keys(); }
 
-    bool isActive() const { return m_index >= 0; }
-
-    // Render the current animation frame into target (sized by the host to its
-    // window). teePosInTarget = the tee's TeePos in the host window's
-    // coordinates (the tee canvas shifted down by the headroom). Returns false
-    // when no emoticon is active.
-    bool renderFrame(QPixmap &target, const QPointF &teePosInTarget);
+    // Render the current animation frame of `key` into target (sized by the
+    // host to its window). teePosInTarget = the tee's TeePos in the host
+    // window's coordinates. Returns false when key has no active emoticon.
+    bool renderFrame(QPixmap &target, const QString &key, const QPointF &teePosInTarget);
+    bool renderFrame(QPixmap &target, const QPointF &teePosInTarget);     // local
 
 signals:
     void frameChanged();   // host should repaint (new animation frame / ended)
@@ -51,15 +63,19 @@ private slots:
     void updateFrame();
 
 private:
+    struct Active {
+        int index = -1;
+        float teeSize = 64.0f;
+        QPointF teePos;    // TeePos in the square tee-canvas coordinates
+        QElapsedTimer clock;
+    };
     static constexpr uint32_t EMOTICON_TEX_ID = 2;
 
     QPixmapBackend m_backend;
+    QPixmap m_atlas;                       // 表情图集副本（供圆盘裁图标）
     teer::CEmoticonRenderer m_renderer{&m_backend, teer::STextureHandle(EMOTICON_TEX_ID)};
     QTimer m_frameTimer;
-    QElapsedTimer m_clock;
-    int m_index = -1;     // -1 = no active emoticon
-    float m_teeSize = 64.0f;
-    QPointF m_teePos;     // TeePos in the square tee-canvas coordinates
+    QHash<QString, Active> m_active;   // key -> active emoticon
 };
 
 #endif // EMOTICONWINDOW_H

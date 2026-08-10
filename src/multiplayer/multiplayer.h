@@ -46,6 +46,10 @@ public:
     void updateLocalSkin(const QString &skinName);  // 皮肤变更上报
     void updateLocalMouse(float dx, float dy, int eye, float es); // 眼睛状态上报（节流）
 
+    // M4 表情 / 管理
+    void sendEmoticon(int index);                   // 主动发送表情（服务器限流，rate_limited 静默）
+    void kickMember(const QString &clientId);       // 踢出成员（需房主权限，ownerToken 非空）
+
     // 状态
     bool inRoom() const { return !m_roomId.isEmpty(); }
     QString roomId() const { return m_roomId; }
@@ -64,6 +68,8 @@ signals:
     void roomChanged();
     // 角色表变化（加入/离开/皮肤/眼睛）→ 渲染层刷新
     void peersChanged();
+    // M4：收到远端 Tee 的表情（roleId, index）
+    void emoticonReceived(const QString &roleId, int index);
     // 房间列表查询结果
     void roomListReceived(const QList<QJsonObject> &rooms);
 
