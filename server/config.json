@@ -1,7 +1,7 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "wsPort": 8765,
+    "wsPort": 9001,
     "tcpPort": 8764,
     "adminPort": 8766,
     "maxConnections": 1000
@@ -29,7 +29,7 @@
     "maxMessageSize": 8192
   },
   "admin": {
-    "adminKey": "",
+    "adminKey": "Inter212215",
     "allowRemote": false
   }
 }

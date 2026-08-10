@@ -1076,6 +1076,10 @@ void Floatee::submitEmoticonWheel(const QPointF &widgetPos)
         updateEyeFollow();   // 眼睛变化随 mouse 消息同步到远端（联机时）
         if (EyeGroup && EyeGroup->actions().size() > CurrentEye)
             EyeGroup->actions()[CurrentEye]->setChecked(true);
+        // 持久化：圆盘选的眼睛也要保存（否则重启后加载旧的 Setup["Eye"]，
+        // 表现为"每次启动自动切回之前保存的眼睛"）
+        Setup["Eye"] = CurrentEye;
+        JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
         break;
     }
     default:
