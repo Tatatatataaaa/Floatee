@@ -50,8 +50,8 @@ void EmoticonWheel::onAnimTick()
 {
     if (!m_open)
         return;
-    // 全部 item 动画完成（背景 + 最大延迟 + 时长）后停止
-    const qint64 total = kBgDurMs + kMaxCount * kItemDelayMs + kItemDurMs;
+    // 全部 item 动画完成（表情起始 + 最大延迟 + 时长）后停止
+    const qint64 total = kItemStartMs + kMaxCount * kItemDelayMs + kItemDurMs;
     if (m_animClock.elapsed() >= total) {
         m_animTimer.stop();
         return;
@@ -164,12 +164,12 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
             const double angle = 2.0 * M_PI * i / NUM_EMOTICONS - M_PI / 2.0; // 从顶部开始
             const QPointF pos = c + QPointF(std::cos(angle), std::sin(angle)) * (kOuterItemR * scl);
             const bool hover = (i == m_selEmoticon);
-            // 弹出回弹：先放大到 ~110% 再回落 100%；item 错开 stagger 延迟（背景之后）
-            const double reveal = itemReveal(now, kBgDurMs + i * kItemDelayMs);
+            // 弹出回弹：先放大到 ~110% 再回落 100%；item 错开 stagger 延迟（背景未完即开始）
+            const double reveal = itemReveal(now, kItemStartMs + i * kItemDelayMs);
             if (reveal <= 0.001)
                 continue;
             const double size = (hover ? 74.0 : 52.0) * scl * reveal;
-            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - (kBgDurMs + i * kItemDelayMs))) / 80.0);
+            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - (kItemStartMs + i * kItemDelayMs))) / 80.0);
             p.setOpacity(alpha);
             const int col = i % 4, row = i / 4;
             const QRectF src(col * cell, row * cell, cell, cell);
@@ -190,11 +190,11 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
             const QPointF pos = c + QPointF(std::cos(angle), std::sin(angle)) * (kEyeR * scl);
             const bool hover = (i == m_selEye);
             // 眼睛也参与弹出动画（错开在表情之后），尺寸/淡入同表情
-            const double reveal = itemReveal(now, kBgDurMs + (NUM_EMOTICONS + i) * kItemDelayMs);
+            const double reveal = itemReveal(now, kItemStartMs + (NUM_EMOTICONS + i) * kItemDelayMs);
             if (reveal <= 0.001)
                 continue;
             const double size = (hover ? 56.0 : 40.0) * scl * reveal;
-            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - (kBgDurMs + (NUM_EMOTICONS + i) * kItemDelayMs))) / 80.0);
+            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - (kItemStartMs + (NUM_EMOTICONS + i) * kItemDelayMs))) / 80.0);
             p.setOpacity(alpha);
             const QRectF src(kEyeRegionX[i] * sx, kEyeRegionY * sy,
                              kEyeRegionSize * sx, kEyeRegionSize * sy);
