@@ -30,7 +30,8 @@ public:
 
     // 以屏幕坐标 center 打开 / 关闭；setScale 先设（非全屏小窗口缩小圆盘）
     void open(const QPointF &center);
-    void close();
+    void close();                    // 立即关闭（离开房间等强制场景）
+    void startClose();               // 触发收回动画后关闭（选择/取消/超时）
     bool isOpen() const { return m_open; }
     const QPointF &center() const { return m_center; }
     // 整体缩放（0.4~2.0）：全屏=1.0，非全屏跟随 Tee 缩放（基础×SizeScale）
@@ -80,6 +81,12 @@ private:
     // 弹出动画：打开时启动，每 item 错开延迟 + 回弹缩放
     QElapsedTimer m_animClock;
     QTimer m_animTimer;
+    // 收回动画：5s 未选择或点击中心关闭触发
+    bool m_closing = false;
+    QElapsedTimer m_closeClock;
+    QTimer m_closeTimer;             // 5s 空闲超时
+    static constexpr int kIdleTimeoutMs = 5000;
+    static constexpr qint64 kCloseDurMs = 180;    // 收回动画时长
     static constexpr qint64 kBgDurMs = 200;       // 背景圆弹出时长
     static constexpr qint64 kItemStartMs = 100;   // 表情起始延迟（背景未完即开始）
     static constexpr qint64 kItemDelayMs = 24;    // 相邻 item 错开

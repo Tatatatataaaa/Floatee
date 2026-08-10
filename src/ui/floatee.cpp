@@ -656,9 +656,9 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 void Floatee::keyPressEvent(QKeyEvent *event)
 {
     if (event->key() == Qt::Key_Escape) {
-        // Esc 关闭圆盘（全屏/非全屏通用）
+        // Esc 关闭圆盘（全屏/非全屏通用，触发收回动画）
         if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
-            m_emoticonWheel->close();
+            m_emoticonWheel->startClose();
             unsetCursor();
             update();
         }
@@ -1063,7 +1063,7 @@ void Floatee::submitEmoticonWheel(const QPointF &widgetPos)
     if (!m_emoticonWheel || !m_emoticonWheel->isOpen())
         return;
     const EmoticonWheel::Result r = m_emoticonWheel->submitAt(widgetPos);
-    m_emoticonWheel->close();
+    m_emoticonWheel->startClose();   // 触发收回动画后关闭
     unsetCursor();
     switch (r.hit) {
     case EmoticonWheel::Hit::Emoticon:
