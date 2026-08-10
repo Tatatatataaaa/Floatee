@@ -326,6 +326,8 @@ void Floatee::Initialize()
         m_hitTestTimer = new QTimer(this);
         m_hitTestTimer->setInterval(16);
         connect(m_hitTestTimer, &QTimer::timeout, this, &Floatee::onHitTestTick);
+        // 启动时自动连接上次使用的服务器，免手动连接
+        tryAutoConnectLastServer();
     }
 
     TrayMenu->addSeparator();
@@ -776,6 +778,28 @@ void Floatee::mpConnect()
 void Floatee::mpDisconnect()
 {
     if (m_multi) m_multi->disconnect();
+}
+
+void Floatee::tryAutoConnectLastServer()
+{
+    if (!m_multi)
+        return;
+    const QJsonObject mp = Setup.value("multiplayer").toObject();
+    if (!mp.contains(QStringLiteral("server")))
+        return;                       // 从未连接过 → 不自动连接
+    const QString s = mp.value(QStringLiteral("server")).toString().trimmed();
+    if (s.isEmpty())
+        return;
+    // 解析 host:port（与 mpConnect 相同规则）
+    const int colon = s.lastIndexOf(QLatin1Char(':'));
+    QString host = s;
+    quint16 port = 8764;
+    if (colon > 0) {
+        host = s.left(colon);
+        const quint16 p = s.mid(colon + 1).toUShort();
+        port = p != 0 ? p : 8764;
+    }
+    m_multi->connectTo(host, port);
 }
 
 void Floatee::mpCreateRoom()
@@ -1266,6 +1290,16 @@ void Floatee::wheelEvent(QWheelEvent *event)
                     const int newCs = pr.drawer->canvasSize();
                     if (oldCs > 0)
                         pr.pos = QPointF(g) - anchor * (double(newCs) / oldCs);
+                    // 关键：setRenderScale 只更新画布/tee 尺寸，必须重渲染
+                    // body/eyes 到新 canvasSize，否则贴图仍是旧尺寸、缩放会
+                    // 退化成"斜向位移"（对比本地 Tee 缩放后有 RenderedEye=-1
+                    // 强制重渲染，此处之前漏了这一步）。
+                    pr.drawer->renderBody(pr.body);
+                    pr.drawer->renderEyes(pr.eyes, pr.eye, pr.dir.x(), pr.dir.y(),
+                                          pr.eyeScale);
+                    pr.lastEye = pr.eye;
+                    pr.lastEyeScale = pr.eyeScale;
+                    pr.lastDir = pr.dir;
                 }
                 update();
             }

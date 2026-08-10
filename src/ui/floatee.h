@@ -171,6 +171,8 @@ protected slots:
     void mpJoinRoom();
     void mpShowJoinCode();
     void mpRoomList();
+    // 启动时自动连接上次使用的服务器（default.json multiplayer.server）
+    void tryAutoConnectLastServer();
 
     // ── M2：全屏画布 / Peer 渲染 / 交互 ──
     void onRoomChangedMp();     // 进出房间 → 切换全屏画布

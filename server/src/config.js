@@ -18,7 +18,7 @@ export const DEFAULTS = {
     capacity: 8,
     maxRooms: 100,
     roomIdLength: 6,
-    joinCodeLength: 8,
+    joinCodeLength: 4,
     emptyTtlMs: 300000,     // 空房 5 分钟销毁
     idleTimeoutMs: 30000,   // 连接 30s 无消息视为超时
   },

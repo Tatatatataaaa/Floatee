@@ -5,11 +5,16 @@ import { MSG } from './protocol.js';
 import { logger } from './logger.js';
 import { Store, Session, Room, Member, RoleInfo } from './store.js';
 
-// 随机字母数字串（排除易混淆字符 0O1Il）
+// 随机串字符集：
+// ALPHABET —— 通用（ownerToken 等，排除易混淆 0O1Il）
+// DIGITS —— 房间号（6 位纯数字）
+// CODE_ALPHABET —— 邀请码（4 位大写字母+数字，排除易混淆 0O1I）
 const ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
-function randString(len) {
+const DIGITS = '0123456789';
+const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function randString(len, alphabet = ALPHABET) {
   let s = '';
-  for (let i = 0; i < len; i++) s += ALPHABET[crypto.randomInt(0, ALPHABET.length)];
+  for (let i = 0; i < len; i++) s += alphabet[crypto.randomInt(0, alphabet.length)];
   return s;
 }
 
@@ -78,12 +83,12 @@ export class RoomManager {
     if (this.store.rooms.size >= this.cfg.room.maxRooms) return err('room_full', '服务器房间数已达上限');
 
     let roomId;
-    do { roomId = randString(this.cfg.room.roomIdLength); } while (this.store.rooms.has(roomId));
+    do { roomId = randString(this.cfg.room.roomIdLength, DIGITS); } while (this.store.rooms.has(roomId));
 
     const room = new Room(roomId, msg.roomName || `Room-${roomId}`, msg.capacity || this.cfg.room.capacity,
       msg.public === true, session.clientId);
     room.ownerToken = randString(32);
-    room.joinCode = randString(this.cfg.room.joinCodeLength);
+    room.joinCode = randString(this.cfg.room.joinCodeLength, CODE_ALPHABET);
     this.store.rooms.set(roomId, room);
 
     this.addMember(room, session, true);

@@ -10,7 +10,7 @@
     "capacity": 8,
     "maxRooms": 100,
     "roomIdLength": 6,
-    "joinCodeLength": 8,
+    "joinCodeLength": 4,
     "emptyTtlMs": 300000,
     "idleTimeoutMs": 30000
   },

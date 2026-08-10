@@ -8,7 +8,7 @@ import { createMessageHandler } from '../src/session.js';
 // 最小配置
 const config = {
   security: { maxConnsPerDevice: 1, maxNameLen: 32, maxSkinLen: 64 },
-  room: { capacity: 8, maxRooms: 100, roomIdLength: 6, joinCodeLength: 8, emptyTtlMs: 300000, idleTimeoutMs: 30000 },
+  room: { capacity: 8, maxRooms: 100, roomIdLength: 6, joinCodeLength: 4, emptyTtlMs: 300000, idleTimeoutMs: 30000 },
   throttle: { emoticonPerSec: 5, skinPerSec: 2, mousePerSec: 20 },
 };
 
