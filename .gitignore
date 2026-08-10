@@ -10,4 +10,5 @@ tee_render/build/
 build_android/
 Floatee.pro
 *.md
+!README.md
 archives/
