@@ -464,6 +464,7 @@ void Floatee::Initialize()
     }
     connect(EmoticonWin, &EmoticonWindow::frameChanged, this, qOverload<>(&QWidget::update));
     m_emoticonWheel = new EmoticonWheel(this);   // M4：表情圆盘（全屏画布 overlay）
+    connect(m_emoticonWheel, &EmoticonWheel::frameChanged, this, qOverload<>(&QWidget::update));
     // 聊天气泡过期检查/重绘
     m_chatTimer = new QTimer(this);
     m_chatTimer->setInterval(300);

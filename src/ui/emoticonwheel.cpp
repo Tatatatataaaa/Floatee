@@ -24,6 +24,58 @@ int indexFromAngle(double angle, int count)
 EmoticonWheel::EmoticonWheel(QObject *parent)
     : QObject(parent)
 {
+    m_animTimer.setInterval(16);
+    connect(&m_animTimer, &QTimer::timeout, this, &EmoticonWheel::onAnimTick);
+}
+
+void EmoticonWheel::open(const QPointF &center)
+{
+    m_open = true;
+    m_center = center;
+    m_mouse = center;
+    updateSelection();
+    // 启动弹出回弹动画
+    m_animClock.start();
+    m_animTimer.start();
+    emit frameChanged();
+}
+
+void EmoticonWheel::close()
+{
+    m_open = false;
+    m_animTimer.stop();
+}
+
+void EmoticonWheel::onAnimTick()
+{
+    if (!m_open)
+        return;
+    // 全部 item 动画完成（最大延迟 + 时长）后停止
+    const qint64 total = kMaxCount * kItemDelayMs + kItemDurMs;
+    if (m_animClock.elapsed() >= total) {
+        m_animTimer.stop();
+        return;
+    }
+    emit frameChanged();
+}
+
+// easeOutBack：0→峰值(overshoot≈1.1)→1，带回弹超调
+double EmoticonWheel::easeOutBack(double t, double overshoot)
+{
+    if (t <= 0.0) return 0.0;
+    if (t >= 1.0) return 1.0;
+    const double c1 = overshoot * 1.70158 / 1.1;   // 峰值≈overshoot
+    const double c3 = c1 + 1.0;
+    const double u = t - 1.0;
+    return 1.0 + c3 * u * u * u + c1 * u * u;
+}
+
+double EmoticonWheel::itemReveal(qint64 at, qint64 delayMs) const
+{
+    const qint64 local = at - delayMs;
+    if (local < 0)
+        return 0.0;
+    return easeOutBack(double(local) / double(kItemDurMs), 1.1);
 }
 
 void EmoticonWheel::updateSelection()
@@ -78,6 +130,7 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
         return;
     const QPointF c = m_center;
     const double scl = m_scale;
+    const qint64 now = m_animClock.isValid() ? m_animClock.elapsed() : 0;
 
     // ── 背景：外环 + 内环分隔（半透明）──
     QPainterPath path;
@@ -93,19 +146,26 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
     p.drawLine(c + QPointF(-s, -s), c + QPointF(s, s));
     p.drawLine(c + QPointF(-s, s), c + QPointF(s, -s));
 
-    // ── 外环：16 个表情（从 emoticons.png 4×4 裁取）──
+    // ── 外环：16 个表情（从 emoticons.png 4×4 裁取，弹出回弹动画）──
     if (!emoticonAtlas.isNull()) {
         const double cell = double(emoticonAtlas.width()) / 4.0;
         for (int i = 0; i < NUM_EMOTICONS; ++i) {
             const double angle = 2.0 * M_PI * i / NUM_EMOTICONS - M_PI / 2.0; // 从顶部开始
             const QPointF pos = c + QPointF(std::cos(angle), std::sin(angle)) * (kOuterItemR * scl);
             const bool hover = (i == m_selEmoticon);
-            const double size = (hover ? 74.0 : 52.0) * scl;
+            // 弹出回弹：先放大到 ~110% 再回落 100%；item 错开 stagger 延迟
+            const double reveal = itemReveal(now, i * kItemDelayMs);
+            if (reveal <= 0.001)
+                continue;
+            const double size = (hover ? 74.0 : 52.0) * scl * reveal;
+            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - i * kItemDelayMs)) / 80.0);
+            p.setOpacity(alpha);
             const int col = i % 4, row = i / 4;
             const QRectF src(col * cell, row * cell, cell, cell);
             p.drawPixmap(QRectF(pos.x() - size / 2, pos.y() - size / 2, size, size),
                          emoticonAtlas, src);
         }
+        p.setOpacity(1.0);
     }
 
     // ── 内环：6 个眼睛（从皮肤图集裁取；BLINK=NORMAL 压扁）──
@@ -118,7 +178,13 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
             const double angle = 2.0 * M_PI * i / NUM_EYES - M_PI / 2.0;
             const QPointF pos = c + QPointF(std::cos(angle), std::sin(angle)) * (kEyeR * scl);
             const bool hover = (i == m_selEye);
-            const double size = (hover ? 56.0 : 40.0) * scl;
+            // 眼睛也参与弹出动画（错开在表情之后），尺寸/淡入同表情
+            const double reveal = itemReveal(now, (NUM_EMOTICONS + i) * kItemDelayMs);
+            if (reveal <= 0.001)
+                continue;
+            const double size = (hover ? 56.0 : 40.0) * scl * reveal;
+            const double alpha = qMin(1.0, double(qMax<qint64>(0, now - (NUM_EMOTICONS + i) * kItemDelayMs)) / 80.0);
+            p.setOpacity(alpha);
             const QRectF src(kEyeRegionX[i] * sx, kEyeRegionY * sy,
                              kEyeRegionSize * sx, kEyeRegionSize * sy);
             if (i == 5) {
@@ -133,5 +199,6 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
                              skinAtlas, src);
             }
         }
+        p.setOpacity(1.0);
     }
 }

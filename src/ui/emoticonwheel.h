@@ -4,6 +4,8 @@
 #include <QObject>
 #include <QPixmap>
 #include <QPointF>
+#include <QElapsedTimer>
+#include <QTimer>
 
 /**
  * M4 表情圆盘：全屏画布内的环形选择器（DDNet CEmoticon 方案）。
@@ -27,8 +29,8 @@ public:
     explicit EmoticonWheel(QObject *parent = nullptr);
 
     // 以屏幕坐标 center 打开 / 关闭；setScale 先设（非全屏小窗口缩小圆盘）
-    void open(const QPointF &center) { m_open = true; m_center = center; m_mouse = center; updateSelection(); }
-    void close() { m_open = false; }
+    void open(const QPointF &center);
+    void close();
     bool isOpen() const { return m_open; }
     const QPointF &center() const { return m_center; }
     // 整体缩放（0.4~2.0）：全屏=1.0，非全屏跟随 Tee 缩放（基础×SizeScale）
@@ -46,6 +48,21 @@ public:
     // 渲染：emoticonAtlas=表情图集(4×4 网格)，skinAtlas=皮肤图集(256×256)
     void paint(QPainter &p, const QPixmap &emoticonAtlas, const QPixmap &skinAtlas) const;
 
+signals:
+    void frameChanged();   // 弹出动画进行中，host 应 repaint
+
+private slots:
+    void onAnimTick();
+
+private:
+    void updateSelection();
+    Result hitTest(const QPointF &g) const;
+    // 弹出回弹曲线：easeOutBack（0→~1.1→1），item 错开 stagger 延迟
+    static double easeOutBack(double t, double overshoot = 1.1);
+    // 单个 item 的 reveal 系数（含淡入）；delayMs=该 item 延迟，at 为当前
+    // elapsed（ms）；返回 0=不可见，~1.1=峰值超调，1=稳定
+    double itemReveal(qint64 at, qint64 delayMs) const;
+
     // 眼睛图标在皮肤图集中的参考图 X 坐标（256×128 参考图，y=96，每格 32×32），
     // paint 时按实际皮肤尺寸缩放。顺序：NORMAL, HAPPY, ANGRY, PAIN, SURPRISE, BLINK
     // （BLINK=NORMAL 压扁）
@@ -53,16 +70,19 @@ public:
     static constexpr int kEyeRegionY = 96;
     static constexpr int kEyeRegionSize = 32;
 
-private:
-    void updateSelection();
-    Result hitTest(const QPointF &g) const;
-
     bool m_open = false;
     QPointF m_center;
     QPointF m_mouse;
     int m_selEmoticon = -1;
     int m_selEye = -1;
     double m_scale = 1.0;
+
+    // 弹出动画：打开时启动，每 item 错开延迟 + 回弹缩放
+    QElapsedTimer m_animClock;
+    QTimer m_animTimer;
+    static constexpr qint64 kItemDelayMs = 24;    // 相邻 item 错开
+    static constexpr qint64 kItemDurMs = 320;     // 单个 item 动画时长
+    static constexpr qint64 kMaxCount = 16;       // 外环表情数（延迟最大档）
 
     // 半径参数（屏幕像素）
     static constexpr double kCancelR = 40.0;
