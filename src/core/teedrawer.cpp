@@ -336,6 +336,12 @@ bool TeeDrawer::load(const QString &skinPath,
 {
     QPixmap loaded;
     bool ok = loaded.load(skinPath);
+    // 校验：加载"成功"但全透明/尺寸过小的坏皮肤（如残留的损坏或空测试皮肤）
+    // 渲染出来会完全不可见 → 同样视为失败并回落到 default，避免 Tee 空白。
+    if (ok && !loaded.isNull()
+        && (loaded.width() < 8 || loaded.height() < 8
+            || computeOpaqueRect(loaded).isEmpty()))
+        ok = false;
     if (!ok || loaded.isNull()) {
         qWarning() << "TeeDrawer: failed to load skin" << skinPath
                    << "— falling back to" << defaultSkinPath();

@@ -885,17 +885,38 @@ void Floatee::enterFullscreenCanvas()
             dbgWin(QStringLiteral("[fullscreen] taskbar rect(log)=%1")
                 .arg(rectStr(tbf.x(), tbf.y(), tbf.width(), tbf.height())));
             const LONG m = 4;   // 容差（逻辑 px）
-            // 边判定：任务栏贴某一边（任务栏该边 ≈ 屏幕对应边），再裁掉任务栏区域
-            const bool atBottom = std::abs(tbf.bottom() - scr.bottom()) <= m;
-            const bool atTop    = std::abs(tbf.top() - scr.top()) <= m;
-            const bool atLeft   = std::abs(tbf.left() - scr.left()) <= m;
-            const bool atRight  = std::abs(tbf.right() - scr.right()) <= m;
-            dbgWin(QStringLiteral("[fullscreen] edge B=%1 T=%2 L=%3 R=%4")
-                .arg(atBottom).arg(atTop).arg(atLeft).arg(atRight));
-            if (atBottom)      scr.setBottom(qMin(scr.bottom(), int(qRound(tbf.top()))));
-            else if (atTop)    scr.setTop(qMax(scr.top(), int(qRound(tbf.bottom()))));
-            else if (atLeft)   scr.setLeft(qMax(scr.left(), int(qRound(tbf.right()))));
-            else if (atRight)  scr.setRight(qMin(scr.right(), int(qRound(tbf.left()))));
+            // 用「完整屏幕几何」（s->geometry()，含任务栏）判断任务栏贴哪条边，
+            // 再从 availableGeometry 裁掉任务栏所在条带。
+            //  - fixed 任务栏：availableGeometry 已排除任务栏，再裁同条带无影响
+            //  - auto-hide 任务栏：availableGeometry = 全屏（隐藏的任务栏不占
+            //    工作区），必须用完整屏判边 + 裁掉条带，否则 Floatee 全屏覆盖
+            //    会遮挡弹出的任务栏（表现为"任务栏不置顶"）
+            if (s) {
+                const QRect full = s->geometry();
+                // 容差 = 任务栏厚度（min 宽/高）：底部/顶部任务栏厚=高，
+                // 左/右任务栏厚=宽。不能用 max（横跨全屏的任务栏宽=屏宽，
+                // 容差会过大导致误判所有边）。
+                const int thick = qMax(16, qRound(qMin(tbf.width(), tbf.height())));
+                // 横跨全宽 → 底/顶任务栏；纵跨全高 → 左/右任务栏。避免竖条
+                // 任务栏的 top/bottom 也贴屏幕 top/bottom 导致误判 atBottom。
+                const bool spansWidth  = std::abs(tbf.width() - full.width()) <= 4;
+                const bool spansHeight = std::abs(tbf.height() - full.height()) <= 4;
+                const bool atBottom = spansWidth  && std::abs(tbf.top() - full.bottom()) <= thick;
+                const bool atTop    = spansWidth  && std::abs(tbf.bottom() - full.top()) <= thick;
+                const bool atLeft   = spansHeight && std::abs(tbf.right() - full.left()) <= thick;
+                const bool atRight  = spansHeight && std::abs(tbf.left() - full.right()) <= thick;
+                dbgWin(QStringLiteral("[fullscreen] edge B=%1 T=%2 L=%3 R=%4")
+                    .arg(atBottom).arg(atTop).arg(atLeft).arg(atRight));
+                const QRect origScr = scr;   // 保护：记录原始可用区域
+                if (atBottom)      scr.setBottom(qMin(scr.bottom(), full.bottom() - qRound(tbf.height())));
+                else if (atTop)    scr.setTop(qMax(scr.top(), full.top() + qRound(tbf.height())));
+                else if (atLeft)   scr.setLeft(qMax(scr.left(), full.left() + qRound(tbf.width())));
+                else if (atRight)  scr.setRight(qMin(scr.right(), full.right() - qRound(tbf.width())));
+                // 保护：多显示器/异常布局下裁切可能出错位（0 宽/过小），回退原始
+                // 可用区域，避免窗口错位导致 Tee 不显示。
+                if (scr.width() < 100 || scr.height() < 100)
+                    scr = origScr;
+            }
         } else {
             dbgWin(QStringLiteral("[fullscreen] ABM_GETTASKBARPOS failed"));
         }
