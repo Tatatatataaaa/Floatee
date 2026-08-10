@@ -10,15 +10,7 @@
         <file alias="eyes_happy.png">assets/main/eyes_happy.png</file>
     </qresource>
     <qresource prefix="/skins">
-        <file alias="Tata.png">assets/skin/Tata.png</file>
-        <file alias="Tataa.png">assets/skin/Tataa.png</file>
-        <file alias="chinese_by_whis.png">assets/skin/chinese_by_whis.png</file>
-        <file alias="coala_pinky.png">assets/skin/coala_pinky.png</file>
-        <file alias="mouse.png">assets/skin/mouse.png</file>
-        <file alias="santa_bluekitty.png">assets/skin/santa_bluekitty.png</file>
-        <file alias="flower_crown_ghost.png">assets/skin/flower_crown_ghost.png</file>
-        <file alias="ghost_halloween.png">assets/skin/ghost_halloween.png</file>
-        <file alias="ghost_zeeli.png">assets/skin/ghost_zeeli.png</file>
+        <file alias="default.png">assets/skin/default.png</file>
     </qresource>
     <qresource prefix="/ProtectImg">
         <file>assets/bg/neko.jpg</file>

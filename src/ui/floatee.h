@@ -123,6 +123,10 @@ public:
         QPixmap body;
         QPixmap eyes;
         bool hidden = false;          // M4：右键隐藏（仅本地摆放，不发送）
+        // 拖拽走路动画：>=0 = 正在拖拽走路（相位），<0 = 静态。拖拽时用
+        // 完整渲染（含 walk 姿态）替代分离渲染（body+eyes），松开恢复。
+        float walkPhase = -1.0f;
+        QPixmap walkPixmap;           // 走路中的完整渲染帧
         // 渲染缓存：数据未变化（含容差）时跳过重渲染（降低 CPU）
         int lastEye = -1;
         float lastEyeScale = -1.0f;
@@ -131,8 +135,8 @@ public:
     QHash<QString, PeerRender> m_peersRender;   // roleId -> 远端 Tee 渲染
     EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
     bool m_fullscreenEntered = false;           // 首次 show 后进入全屏（防重复）
+    bool m_autoConnecting = false;              // 启动自动连接中：结果弹窗 2s 自动关闭
     PlatformWindowInfo *m_platformInfo = nullptr; // 平台层（Win32 顶层置顶）
-    QTimer *m_taskbarTimer = nullptr;           // 周期把任务栏提到最顶层
     bool m_fullscreenCanvas = false;            // 联机全屏画布模式
     QPoint m_preFullscreenPos;                  // 进入全屏前的窗口位置
     QPointF m_localTeePos;                      // 全屏时本地 Tee 的屏幕坐标（左上角）
@@ -192,6 +196,9 @@ protected slots:
     QString currentSkinName() const;                 // 皮肤文件名（用于同步）
     // 命中检测；pad 为命中框外扩像素（穿透轮询用大 pad，交互用 0）
     bool hitTestTee(const QPoint &g, QString *outRoleId, int pad = 0) const;
+    // Tee 身体不能超出画布边界：按实际渲染像素包围盒（opaqueBox，相对 Tee
+    // canvas 左上角）钳制，身体真正碰到边界时才阻止（非正方形碰撞箱）
+    QPointF clampTeePos(QPointF pos, const QRect &opaqueBox) const;
 
     // One-click multi-instance: launch a NEW PROCESS with an auto-generated
     // unique profile name (no dialog) for quick side-by-side pets.
@@ -222,6 +229,8 @@ protected slots:
     void openColorDialog();
     void updateEyeFollow();
     void triggerRandomEmoticon();
+    // 托盘图标：Tee 渲染放大 200%（系统托盘缩小时更清晰/醒目）
+    QIcon makeTrayIcon() const;
     void onRandomEmoticonTick();
     // 在指定 Tee 上显示表情（key 空 = 本地；否则 = 远端 roleId）
     void showEmoticonOnTee(int index, const QString &key = QString());
@@ -233,8 +242,6 @@ protected slots:
     void submitEmoticonWheel(const QPointF &widgetPos);
     // 启动即进入全屏透明画布（单机/联机统一），避免小窗口↔全屏来回切换
     void enterFullscreenCanvas();
-    // 把系统任务栏提升到 topmost 最顶层（周期调用，保证任务栏永远可见）
-    void raiseTaskbarTopmost();
     // 临时诊断：输出窗口与任务栏的最终状态（定位任务栏遮挡，定位后移除）
     void logWindowState();
     // M4：右键远端 Tee 管理菜单（隐藏/重置/踢出）

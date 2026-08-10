@@ -18,7 +18,7 @@ public:
     explicit TeeDrawer(const QString &skinPath = defaultSkinPath());
 
     bool load(const QString &skinPath, int hueShift = 0, double satFactor = 1.0, double lightFactor = 1.0);
-    static QString defaultSkinPath() { return QStringLiteral(":/skins/Tata.png"); }
+    static QString defaultSkinPath() { return QStringLiteral(":/skins/default.png"); }
     static QPixmap adjustHsl(const QPixmap &src, int hueShift, double satFactor, double lightFactor);
 
     // Render a tee with the given eye type and look direction.
@@ -48,6 +48,10 @@ public:
     void setRenderScale(float scale);
     int canvasSize() const { return m_canvasSize; }
     float teeSize() const { return m_teeSize; }
+    // 非透明像素包围盒（相对 canvas 左上角）：Tee 身体真正占据的像素范围，
+    // 用于把 Tee 钳制在画布内时按实际渲染像素而非正方形碰撞箱。身体层渲染
+    // 时计算并缓存；眼睛层在脸内，不改变整体包围盒（高频眼睛渲染零开销）。
+    QRect opaqueRect() const { return m_opaqueRect; }
 
     // Edge anti-aliasing feather strength: 0 = off, 1 = one 3×3 pass,
     // 2 = two passes (stronger). Applied to the rendered tee after downscale.
@@ -79,6 +83,7 @@ private:
     QPixmapBackend m_backend;
     teer::CTeeRenderer m_renderer;
     teer::STeeRenderInfo m_info;
+    QRect m_opaqueRect;    // 身体层渲染后缓存的实际非透明像素包围盒
 
     int m_canvasSize = BASE_CANVAS_SIZE;
     float m_teeSize = BASE_TEE_SIZE;
@@ -104,6 +109,9 @@ private:
     // the transition to ~1–2px for a smooth, anti-aliased edge.
     // `strength` = number of 3×3 passes (0 = none, 2 = stronger).
     static QPixmap featherAlpha(const QPixmap &src, int strength);
+    // Compute the bounding box of non-transparent pixels (relative to the
+    // pixmap origin); empty rect when fully transparent.
+    static QRect computeOpaqueRect(const QPixmap &pm);
     static teer::EEmote mapEye(int eyeIdx);
     // Render the given layer set (TEE_PREVIEW_LAYER_*) into `out`.
     void renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX, float dirY,

@@ -395,13 +395,14 @@ void CTeeRenderer::RenderTee7(
 			const CAnimKeyframe *pFoot = Filling ? pAnim->GetFrontFoot() : pAnim->GetBackFoot();
 
 			// Feet quads are 2:1 and drawn at the foot texture's natural scale
-			// relative to the body: width = BaseSize * 2/3, height = BaseSize/3
-			// (64×32 at BaseSize=96), matching the classic Floatee proportions.
+			// relative to the body: width = BaseSize * 4/5, height = BaseSize * 2/5
+			// (≈76.8×38.4 at BaseSize=96) — ~120% of the previous 2/3 proportions,
+			// closer to DDNet's larger feet.
 			// (Upstream DDNet uses BaseSize/2.1 with w == h, which both stretches
 			// the 64×32 texture into a square and renders the feet far smaller
 			// than the body.)
-			const float w = (BaseSize / 1.5f) * FeetScale.x;
-			const float h = (BaseSize / 1.5f) * FeetScale.y / 2.0f;
+			const float w = (BaseSize / 1.25f) * FeetScale.x;
+			const float h = (BaseSize / 1.25f) * FeetScale.y / 2.0f;
 
 			float U0, V0, U1, V1;
 			const ETeeSprite FootSprite = OutLine ? TEE_SPRITE_FOOT_OUTLINE : TEE_SPRITE_FOOT;

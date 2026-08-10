@@ -1,6 +1,9 @@
 #include "teedrawer.h"
 #include <QDebug>
 #include <QtMath>
+#include <QFile>
+#include <QFileInfo>
+#include <QStandardPaths>
 #include <algorithm>
 
 // ── Working-atlas helpers ──────────────────────────────────────────────
@@ -187,7 +190,36 @@ void TeeDrawer::renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX,
     if (m_featherStrength > 0 && !m_fastMode)
         out = featherAlpha(out, m_featherStrength);
 
+    // 身体层（含 outline/feet）渲染后缓存实际非透明像素包围盒，供画布内
+    // 钳制用（按真实渲染像素而非正方形碰撞箱）。眼睛层在脸内，不改变整体
+    // 包围盒，因此 eyes-only 渲染不更新 —— 高频眼睛渲染零额外开销。
+    if (flags & teer::TEE_PREVIEW_LAYER_BODY)
+        m_opaqueRect = computeOpaqueRect(out);
+
     m_info.m_Size = savedSize;
+}
+
+QRect TeeDrawer::computeOpaqueRect(const QPixmap &pm)
+{
+    if (pm.isNull())
+        return QRect();
+    const QImage img = pm.toImage().convertToFormat(QImage::Format_ARGB32);
+    const int w = img.width(), h = img.height();
+    int minX = w, minY = h, maxX = -1, maxY = -1;
+    for (int y = 0; y < h; ++y) {
+        const QRgb *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+        for (int x = 0; x < w; ++x) {
+            if (qAlpha(line[x]) > 0) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+            }
+        }
+    }
+    if (maxX < 0)
+        return QRect();   // 全透明
+    return QRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
 }
 
 QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
@@ -309,6 +341,17 @@ bool TeeDrawer::load(const QString &skinPath,
                    << "— falling back to" << defaultSkinPath();
         if (skinPath != defaultSkinPath())
             ok = loaded.load(defaultSkinPath());
+    }
+    if (!ok || loaded.isNull()) {
+        // 终极兜底：qrc 资源缺失（如旧构建 exe 未内嵌资源）时，尝试从应用
+        // 数据目录 skins/ 加载同名 default 副本（用户/部署可手动放置），避免
+        // Tee 完全空白。
+        const QString fallback = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
+                                 + QStringLiteral("/skins/") + QFileInfo(defaultSkinPath()).fileName();
+        if (QFile::exists(fallback)) {
+            qWarning() << "TeeDrawer: qrc default missing, trying" << fallback;
+            ok = loaded.load(fallback);
+        }
     }
     if (!ok || loaded.isNull()) {
         qWarning() << "TeeDrawer: default skin missing, drawer is empty";
