@@ -36,7 +36,7 @@ export function createMessageHandler(store, rooms, config) {
 
     if (AUTH_REQUIRED.has(msg.type)) {
       // 限流
-      const bucket = { [MSG.EMOTICON]: 'emoticon', [MSG.SKIN_UPDATE]: 'skin', [MSG.MOUSE]: 'mouse' }[msg.type];
+      const bucket = { [MSG.EMOTICON]: 'emoticon', [MSG.SKIN_UPDATE]: 'skin', [MSG.MOUSE]: 'mouse', [MSG.CHAT]: 'chat' }[msg.type];
       if (bucket && !checkRate(session, bucket, config.throttle[`${bucket}PerSec`])) {
         session.send({ type: MSG.ERROR, code: 'rate_limited', message: '消息过于频繁' });
         return;
@@ -57,6 +57,7 @@ export function createMessageHandler(store, rooms, config) {
       case MSG.SKIN_UPDATE: r = rooms.skinUpdate(session, msg); break;
       case MSG.MOUSE: r = rooms.mouse(session, msg); break;
       case MSG.EMOTICON: r = rooms.emoticon(session, msg); break;
+      case MSG.CHAT: r = rooms.chat(session, msg); break;
       default:
         r = { ok: false, code: 'unknown_type', message: `未处理: ${msg.type}` };
     }

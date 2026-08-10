@@ -161,6 +161,17 @@ void Multiplayer::sendEmoticon(int index)
     });
 }
 
+void Multiplayer::sendChat(const QString &text)
+{
+    if (!m_localRoleReady || text.trimmed().isEmpty())
+        return;
+    send(QJsonObject{
+        {QStringLiteral("type"), QStringLiteral("chat")},
+        {QStringLiteral("roleId"), localRoleId()},
+        {QStringLiteral("text"), text.left(256)},
+    });
+}
+
 void Multiplayer::kickMember(const QString &clientId)
 {
     if (m_ownerToken.isEmpty() || m_roomId.isEmpty())
@@ -337,6 +348,12 @@ void Multiplayer::onMessage(const QJsonObject &msg)
         // M4：远端 Tee 表情 → 渲染层在其上方播放
         emit emoticonReceived(msg.value(QStringLiteral("roleId")).toString(),
                               msg.value(QStringLiteral("index")).toInt(0));
+        return;
+    }
+    if (type == QLatin1String("peer_chat")) {
+        // 聊天：远端 Tee 文本 → 渲染层在其上方显示气泡
+        emit chatReceived(msg.value(QStringLiteral("roleId")).toString(),
+                          msg.value(QStringLiteral("text")).toString());
         return;
     }
     if (type == QLatin1String("peer_kicked")) {

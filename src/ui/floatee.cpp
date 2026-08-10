@@ -344,6 +344,10 @@ void Floatee::Initialize()
     });
     TrayMenu->addMenu(EmoticonMenu);
 
+    // ── 聊天：发送消息入口 ──
+    QAction *chatAction = TrayMenu->addAction("Send Message...");
+    connect(chatAction, &QAction::triggered, this, &Floatee::sendChatMessage);
+
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
 
@@ -418,6 +422,7 @@ void Floatee::Initialize()
         connect(m_multi, &Multiplayer::roomChanged, this, &Floatee::onRoomChangedMp);
         connect(m_multi, &Multiplayer::peersChanged, this, &Floatee::onPeersChangedMp);
         connect(m_multi, &Multiplayer::emoticonReceived, this, &Floatee::onEmoticonReceivedMp);
+        connect(m_multi, &Multiplayer::chatReceived, this, &Floatee::onChatReceivedMp);
         m_hitTestTimer = new QTimer(this);
         m_hitTestTimer->setInterval(16);
         connect(m_hitTestTimer, &QTimer::timeout, this, &Floatee::onHitTestTick);
@@ -459,6 +464,14 @@ void Floatee::Initialize()
     }
     connect(EmoticonWin, &EmoticonWindow::frameChanged, this, qOverload<>(&QWidget::update));
     m_emoticonWheel = new EmoticonWheel(this);   // M4：表情圆盘（全屏画布 overlay）
+    // 聊天气泡过期检查/重绘
+    m_chatTimer = new QTimer(this);
+    m_chatTimer->setInterval(300);
+    connect(m_chatTimer, &QTimer::timeout, this, [this]() {
+        if (!m_chatBubbles.isEmpty())
+            update();
+    });
+    m_chatTimer->start();
     EmoticonRandomTimer = new QTimer(this);
     EmoticonRandomTimer->setInterval(10000);   // check every 10s
     connect(EmoticonRandomTimer, &QTimer::timeout, this, &Floatee::onRandomEmoticonTick);
@@ -716,6 +729,8 @@ void Floatee::paintEvent(QPaintEvent *event)
         // M4：多 Tee 并行表情（本地 + 每个远端 Tee）
         if (EmoticonWin && EmoticonWin->hasAny())
             paintEmoticonsFullscreen(p);
+        // 聊天：本地 + 远端 Tee 文本气泡
+        paintChatBubbles(p);
         // M4：表情圆盘 overlay
         if (m_emoticonWheel && m_emoticonWheel->isOpen())
             m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
@@ -1074,6 +1089,86 @@ void Floatee::onEmoticonReceivedMp(const QString &roleId, int index)
     // 全屏画布内，在对应远端 Tee 上方播放表情
     if (m_fullscreenCanvas && EmoticonWin)
         showEmoticonOnTee(index, roleId);
+}
+
+void Floatee::onChatReceivedMp(const QString &roleId, const QString &text)
+{
+    if (text.trimmed().isEmpty())
+        return;
+    ChatBubble b;
+    b.roleId = roleId;
+    b.text = text;
+    b.startMs = QDateTime::currentMSecsSinceEpoch();
+    m_chatBubbles.append(b);
+    if (m_chatBubbles.size() > 8)
+        m_chatBubbles.removeFirst();
+    update();
+}
+
+void Floatee::sendChatMessage()
+{
+    if (!m_multi || !m_multi->inRoom()) {
+        QMessageBox::information(this, QStringLiteral("Chat"),
+                                 QStringLiteral("请先加入房间再发送消息"));
+        return;
+    }
+    bool ok = false;
+    const QString text = QInputDialog::getText(this, QStringLiteral("Send Message"),
+        QStringLiteral("消息："), QLineEdit::Normal, QString(), &ok);
+    if (!ok || text.trimmed().isEmpty())
+        return;
+    onChatReceivedMp(QString(), text);   // 本地也显示气泡（roleId 空 = 本地）
+    m_multi->sendChat(text);
+}
+
+void Floatee::paintChatBubbles(QPainter &p)
+{
+    if (m_chatBubbles.isEmpty())
+        return;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    for (int i = m_chatBubbles.size() - 1; i >= 0; --i) {
+        if (now - m_chatBubbles[i].startMs > 3000)   // 3s 消失
+            m_chatBubbles.removeAt(i);
+    }
+    QFont f = p.font();
+    f.setPixelSize(14);
+    p.setFont(f);
+    for (const auto &b : m_chatBubbles) {
+        QPointF teeCenter;
+        float scale = 1.0f;
+        if (b.roleId.isEmpty()) {
+            const int cs = ExecTeeDrawer.canvasSize();
+            const float ts = ExecTeeDrawer.teeSize();
+            scale = ts / 64.0f;
+            teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+        } else {
+            const auto it = m_peersRender.constFind(b.roleId);
+            if (it == m_peersRender.constEnd() || !it->drawer || it->hidden)
+                continue;
+            const int pcs = it->drawer->canvasSize();
+            const float pts = it->drawer->teeSize();
+            scale = pts / 64.0f;
+            teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
+        }
+        QFontMetrics fm(f);
+        const int maxW = 240;
+        const QRect textRect = fm.boundingRect(QRect(0, 0, maxW, 1000), Qt::TextWordWrap, b.text);
+        const int padX = 8, padY = 5;
+        const int bw = textRect.width() + padX * 2;
+        const int bh = textRect.height() + padY * 2;
+        // 气泡中心在 Tee 上方（比表情气泡略高，避免重叠）
+        const QPointF center(teeCenter.x(), teeCenter.y() - 80.0 * scale - bh / 2.0);
+        const QRect bubble(qRound(center.x() - bw / 2.0), qRound(center.y() - bh / 2.0), bw, bh);
+        const QRect clamped = bubble.intersected(rect());
+        if (clamped.isEmpty())
+            continue;
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(30, 30, 40, 210));
+        p.drawRoundedRect(clamped, 7, 7);
+        p.setPen(Qt::white);
+        p.drawText(clamped.adjusted(padX, padY, -padX, -padY),
+                   Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter, b.text);
+    }
 }
 
 void Floatee::paintEmoticonsFullscreen(QPainter &p)

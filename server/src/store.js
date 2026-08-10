@@ -17,7 +17,7 @@ export class Session {
     this.roles = new Map();        // roleIndex -> RoleInfo
     this.lastSeen = Date.now();
     // 限流滑动窗口（记录时间戳）
-    this.counters = { emoticon: [], skin: [], mouse: [] };
+    this.counters = { emoticon: [], skin: [], mouse: [], chat: [] };
     this.closed = false;   // session.close() 标记（防重复 close）
     this.cleaned = false;  // 已从连接表移除（防重复清理，不受 close 影响）
   }

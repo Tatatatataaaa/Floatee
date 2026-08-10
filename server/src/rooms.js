@@ -276,6 +276,12 @@ export class RoomManager {
     return { ok: true };
   }
 
+  chat(session, msg) {
+    if (!this.hasRole(session, msg.roleId)) return err('role_not_found', '角色不属于本连接');
+    this.broadcastEvent(session, { type: MSG.PEER_CHAT, roleId: msg.roleId, text: msg.text });
+    return { ok: true };
+  }
+
   hasRole(session, roleId) {
     return [...session.roles.values()].some((r) => r.roleId === roleId);
   }

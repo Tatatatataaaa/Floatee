@@ -26,6 +26,7 @@ export const DEFAULTS = {
     emoticonPerSec: 5,
     skinPerSec: 2,
     mousePerSec: 20,
+    chatPerSec: 10,
   },
   security: {
     maxConnsPerDevice: 1,

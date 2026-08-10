@@ -49,6 +49,7 @@ public:
     // M4 表情 / 管理
     void sendEmoticon(int index);                   // 主动发送表情（服务器限流，rate_limited 静默）
     void kickMember(const QString &clientId);       // 踢出成员（需房主权限，ownerToken 非空）
+    void sendChat(const QString &text);             // 发送聊天文本（服务器限流，rate_limited 静默）
 
     // 状态
     bool inRoom() const { return !m_roomId.isEmpty(); }
@@ -70,6 +71,8 @@ signals:
     void peersChanged();
     // M4：收到远端 Tee 的表情（roleId, index）
     void emoticonReceived(const QString &roleId, int index);
+    // 收到远端 Tee 的聊天（roleId, text）
+    void chatReceived(const QString &roleId, const QString &text);
     // 房间列表查询结果
     void roomListReceived(const QList<QJsonObject> &rooms);
 

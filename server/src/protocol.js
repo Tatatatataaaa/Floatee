@@ -17,6 +17,7 @@ export const MSG = {
   SKIN_UPDATE: 'skin_update',
   MOUSE: 'mouse',
   EMOTICON: 'emoticon',
+  CHAT: 'chat',
   PING: 'ping',
   // S → C
   WELCOME: 'welcome',
@@ -33,6 +34,7 @@ export const MSG = {
   PEER_SKIN: 'peer_skin',
   PEER_MOUSE: 'peer_mouse',
   PEER_EMOTICON: 'peer_emoticon',
+  PEER_CHAT: 'peer_chat',
   PONG: 'pong',
   ERROR: 'error',
 };
@@ -41,7 +43,7 @@ export const MSG = {
 export const AUTH_REQUIRED = new Set([
   MSG.CREATE_ROOM, MSG.JOIN_ROOM, MSG.LEAVE_ROOM, MSG.LIST_ROOMS,
   MSG.ROOM_SETTINGS, MSG.KICK_MEMBER, MSG.DISBAND_ROOM,
-  MSG.ADD_ROLE, MSG.REMOVE_ROLE, MSG.SKIN_UPDATE, MSG.MOUSE, MSG.EMOTICON,
+  MSG.ADD_ROLE, MSG.REMOVE_ROLE, MSG.SKIN_UPDATE, MSG.MOUSE, MSG.EMOTICON, MSG.CHAT,
 ]);
 
 // 皮肤名白名单（防注入）
@@ -102,6 +104,10 @@ export function validate(msg, cfg) {
     case MSG.EMOTICON:
       return checkRoleId(msg, cfg)
         || (!Number.isInteger(msg.index) || msg.index < 0 || msg.index > 15 ? fail('bad_field', 'index 非法') : ok());
+    case MSG.CHAT:
+      return checkRoleId(msg, cfg)
+        || (typeof msg.text !== 'string' || msg.text.length === 0 || msg.text.length > cfg.security.maxChatLen
+            ? fail('bad_field', 'text 非法') : ok());
     case MSG.PING:
       return ok();
     default:

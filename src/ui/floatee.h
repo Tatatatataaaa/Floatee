@@ -135,6 +135,10 @@ public:
         QPointF lastDir{0.0f, 0.0f};
     };
     QHash<QString, PeerRender> m_peersRender;   // roleId -> 远端 Tee 渲染
+    // 聊天气泡：roleId（空 = 本地）文本 + 开始时间，3s 后消失
+    struct ChatBubble { QString roleId; QString text; qint64 startMs = 0; };
+    QVector<ChatBubble> m_chatBubbles;
+    QTimer *m_chatTimer = nullptr;              // 聊天气泡过期检查/重绘
     EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
     bool m_fullscreenEntered = false;           // 首次 show 后进入全屏（防重复）
     bool m_autoConnecting = false;              // 启动自动连接中：结果弹窗 2s 自动关闭
@@ -252,6 +256,12 @@ protected slots:
     void showPeerContextMenu(const QString &roleId, const QPoint &g);
     // M4：收到远端 Tee 表情
     void onEmoticonReceivedMp(const QString &roleId, int index);
+    // 聊天：收到远端/本地聊天气泡
+    void onChatReceivedMp(const QString &roleId, const QString &text);
+    // 托盘入口：发送聊天
+    void sendChatMessage();
+    // 全屏画布内渲染聊天气泡
+    void paintChatBubbles(QPainter &p);
     // M4：全屏画布内渲染所有活跃表情（本地 + 每个远端 Tee）
     void paintEmoticonsFullscreen(QPainter &p);
 
