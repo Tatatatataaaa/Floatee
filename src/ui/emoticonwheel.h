@@ -80,6 +80,7 @@ private:
     // 弹出动画：打开时启动，每 item 错开延迟 + 回弹缩放
     QElapsedTimer m_animClock;
     QTimer m_animTimer;
+    static constexpr qint64 kBgDurMs = 200;       // 背景圆弹出时长（先于表情）
     static constexpr qint64 kItemDelayMs = 24;    // 相邻 item 错开
     static constexpr qint64 kItemDurMs = 320;     // 单个 item 动画时长
     static constexpr qint64 kMaxCount = 16;       // 外环表情数（延迟最大档）
