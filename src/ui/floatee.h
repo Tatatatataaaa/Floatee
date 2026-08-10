@@ -14,6 +14,7 @@
 #include <QScreen>
 #include <QMenu>
 #include <QSystemTrayIcon>
+#include <QPropertyAnimation>
 #include <QProcess>
 #include <memory>
 
@@ -31,6 +32,32 @@ namespace Ui {
 class Floatee;
 }
 QT_END_NAMESPACE
+
+// 极简动态菜单：弹出时淡入 + 从下方 14px 滑入（与圆盘/整体风格呼应）。
+class FloateeMenu : public QMenu
+{
+    Q_OBJECT
+public:
+    using QMenu::QMenu;
+protected:
+    void showEvent(QShowEvent *e) override
+    {
+        QMenu::showEvent(e);
+        const QPoint final = pos();
+        auto *pa = new QPropertyAnimation(this, "pos", this);
+        pa->setDuration(150);
+        pa->setStartValue(final + QPoint(0, 14));
+        pa->setEndValue(final);
+        pa->setEasingCurve(QEasingCurve::OutCubic);
+        pa->start(QAbstractAnimation::DeleteWhenStopped);
+        auto *oa = new QPropertyAnimation(this, "windowOpacity", this);
+        oa->setDuration(150);
+        oa->setStartValue(0.0);
+        oa->setEndValue(1.0);
+        oa->setEasingCurve(QEasingCurve::OutCubic);
+        oa->start(QAbstractAnimation::DeleteWhenStopped);
+    }
+};
 
 class Floatee : public QMainWindow
 {

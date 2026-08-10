@@ -170,13 +170,13 @@ void Floatee::Initialize()
     TrayIcon.setIcon(makeTrayIcon());
     TrayIcon.setToolTip("Floatee");
 
-    TrayMenu = new QMenu();
+    TrayMenu = new FloateeMenu();
     // 极简动态风格（与表情圆盘一致）：半透明灰色圆角背景 + 深色字体
     // 应用于全局 QMenu，覆盖托盘主菜单与所有子菜单（Skin/Eyes/Emoticon 等）
     qApp->setStyleSheet(QStringLiteral(
         "QMenu {"
-        "  background-color: rgba(238,238,244,240);"
-        "  border: 1px solid rgba(150,150,168,90);"
+        "  background-color: rgba(250,250,253,220);"
+        "  border: 1px solid rgba(150,150,168,80);"
         "  border-radius: 8px;"
         "  padding: 5px;"
         "}"
@@ -217,7 +217,7 @@ void Floatee::Initialize()
         {"Blink", 5},
     };
 
-    EyeMenu = new QMenu("Eyes");
+    EyeMenu = new FloateeMenu("Eyes");
     EyeGroup = new QActionGroup(EyeMenu);
     EyeGroup->setExclusive(true);
 
@@ -232,7 +232,7 @@ void Floatee::Initialize()
 
     // ── Size submenu (zoom) ─────────────────────────────────────────
     // Levels come from the shared kZoomLevels table (same list as the wheel).
-    SizeMenu = new QMenu("Size");
+    SizeMenu = new FloateeMenu("Size");
     SizeGroup = new QActionGroup(SizeMenu);
     SizeGroup->setExclusive(true);
     for (const double s : kZoomLevels) {
@@ -245,7 +245,7 @@ void Floatee::Initialize()
     connect(SizeMenu, &QMenu::triggered, this, &Floatee::switchSize);
 
     // ── Feather submenu (edge anti-aliasing strength) ──────────────
-    FeatherMenu = new QMenu("Feather");
+    FeatherMenu = new FloateeMenu("Feather");
     FeatherGroup = new QActionGroup(FeatherMenu);
     FeatherGroup->setExclusive(true);
     const QVector<QPair<QString, int>> featherOptions = {
@@ -273,7 +273,7 @@ void Floatee::Initialize()
     if (!QFile::exists(CurrentSkin))
         CurrentSkin = TeeDrawer::defaultSkinPath();
 
-    SkinMenu = new QMenu("Skin");
+    SkinMenu = new FloateeMenu("Skin");
     SkinGroup = new QActionGroup(SkinMenu);
     SkinGroup->setExclusive(true);
 
@@ -320,7 +320,7 @@ void Floatee::Initialize()
     // 每个表情素材 = 一张 4×4 网格图集 PNG（含 16 个表情）；内置默认 + 外部
     // emoticons/ 目录（%APPDATA%\Floatee\emoticons\*.png）。切换只改本地图集，
     // 不向服务器同步。
-    EmoticonSetMenu = new QMenu("Emoticon Set");
+    EmoticonSetMenu = new FloateeMenu("Emoticon Set");
     QActionGroup *emoSetGroup = new QActionGroup(EmoticonSetMenu);
     emoSetGroup->setExclusive(true);
     const QString defaultEmo = QStringLiteral(":/main/emoticons.png");
@@ -357,7 +357,7 @@ void Floatee::Initialize()
     TrayMenu->addMenu(EmoticonSetMenu);
 
     // ── Emoticon submenu（M4：16 个表情，点击本地显示 + 联机发送）──
-    EmoticonMenu = new QMenu("Emoticon");
+    EmoticonMenu = new FloateeMenu("Emoticon");
     for (int i = 0; i < teer::NUM_EMOTICONS; ++i)
         EmoticonMenu->addAction(QStringLiteral("Emoticon %1").arg(i + 1))->setData(i);
     connect(EmoticonMenu, &QMenu::triggered, this, [this](QAction *a) {
@@ -373,7 +373,7 @@ void Floatee::Initialize()
     buildInstanceMenu();
 
     // ── online 分支：Multiplayer 子菜单 ──
-    MpMenu = new QMenu("Multiplayer");
+    MpMenu = new FloateeMenu("Multiplayer");
     QAction *mpConnectAction = MpMenu->addAction("Connect...");
     connect(mpConnectAction, &QAction::triggered, this, &Floatee::mpConnect);
     QAction *mpDisconnectAction = MpMenu->addAction("Disconnect");
@@ -1235,7 +1235,7 @@ void Floatee::showPeerContextMenu(const QString &roleId, const QPoint &g)
     auto it = m_peersRender.find(roleId);
     if (it == m_peersRender.end())
         return;
-    QMenu menu(this);
+    FloateeMenu menu(this);
     const bool isOwner = m_multi && !m_multi->ownerToken().isEmpty();
     const QString clientId = roleId.left(roleId.indexOf(QLatin1Char('/')));   // roleId: <clientId>/0
     QAction *hideAct = menu.addAction(it->hidden ? QStringLiteral("显示") : QStringLiteral("隐藏"));
@@ -1728,7 +1728,7 @@ void Floatee::openConfigFolder()
 void Floatee::buildInstanceMenu()
 {
     if (!InstanceMenu) {
-        InstanceMenu = new QMenu("Instance");
+        InstanceMenu = new FloateeMenu("Instance");
         TrayMenu->addMenu(InstanceMenu);
     }
     disconnect(InstanceMenu, nullptr, this, nullptr);   // drop stale connections
