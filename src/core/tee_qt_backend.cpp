@@ -12,12 +12,16 @@ void QPixmapBackend::DrawQuad(const teer::STeeQuad &quad)
     const float tw = static_cast<float>(src.width());
     const float th = static_cast<float>(src.height());
 
-    // Source rect in texture pixels (UV → pixel coords)
-    QRectF srcRect(
-        quad.m_U0 * tw,
-        quad.m_V0 * th,
-        (quad.m_U1 - quad.m_U0) * tw,
-        (quad.m_V1 - quad.m_V0) * th);
+    // Source rect in texture pixels (UV → pixel coords). Inset by half a texel
+    // so bilinear sampling never reaches past a sprite's own pixels into the
+    // adjacent sprite that shares the same block texture (body fill ↔ outline,
+    // neighbouring eyes, foot ↔ foot outline). Without this the sprite edges
+    // bleed each other's colour in and the silhouette gets dark/jagged lines.
+    const float sx0 = quad.m_U0 * tw, sy0 = quad.m_V0 * th;
+    const float sx1 = quad.m_U1 * tw, sy1 = quad.m_V1 * th;
+    QRectF srcRect(sx0 + 0.5f, sy0 + 0.5f,
+                   qMax(1.0f, sx1 - sx0 - 1.0f),
+                   qMax(1.0f, sy1 - sy0 - 1.0f));
 
     // Destination rect centered at quad position
     QRectF destRect(

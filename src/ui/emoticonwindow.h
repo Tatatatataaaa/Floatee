@@ -7,6 +7,7 @@
 #include <QPixmap>
 #include <QHash>
 #include "core/tee_qt_backend.h"
+#include "core/teedrawer.h"
 #include "tee_emoticon.h"
 
 /**
@@ -60,6 +61,11 @@ public:
     bool renderFrame(QPixmap &target, const QString &key, const QPointF &teePosInTarget);
     bool renderFrame(QPixmap &target, const QPointF &teePosInTarget);     // local
 
+    // 表情气泡边缘羽化（与 Tee 共用同一 Feather 托盘菜单）：
+    // 0=Off 1=Normal 2=Strong，渲染每帧气泡后应用 TeeDrawer::featherAlpha。
+    void setFeatherStrength(int strength) { m_featherStrength = qBound(0, strength, 2); }
+    int featherStrength() const { return m_featherStrength; }
+
 signals:
     void frameChanged();   // host should repaint (new animation frame / ended)
 
@@ -80,6 +86,7 @@ private:
     teer::CEmoticonRenderer m_renderer{&m_backend, teer::STextureHandle(EMOTICON_TEX_ID)};
     QTimer m_frameTimer;
     QHash<QString, Active> m_active;   // key -> active emoticon
+    int m_featherStrength = 1;             // 与 TeeDrawer 默认一致（Normal）
 };
 
 #endif // EMOTICONWINDOW_H

@@ -504,6 +504,8 @@ void Floatee::Initialize()
     // Its frame is drawn by paintEvent into this (single) window, because a
     // second translucent layered window is never composited on this setup.
     EmoticonWin = new EmoticonWindow(this);
+    // 表情气泡与 Tee 共用同一 Feather 菜单（边缘羽化）
+    EmoticonWin->setFeatherStrength(ExecTeeDrawer.featherStrength());
     // 表情素材：按配置加载（内置默认或外部 emoticons/ 目录），纯本地
     {
         const QString defaultEmo = QStringLiteral(":/main/emoticons.png");
@@ -1346,6 +1348,10 @@ void Floatee::switchSkin(QAction *action)
     LightFactor = hsl.value("LightFactor").toDouble(1.0);
 
     ExecTeeDrawer.load(path, HueShift, SatFactor, LightFactor);
+    // load() keeps the current render scale, but re-assert it anyway so the
+    // drawer and SizeScale can never desync — otherwise wheel zoom-in appears
+    // dead right after a skin switch until the user zooms out once.
+    ExecTeeDrawer.setRenderScale(SizeScale);
     CurrentSkin = path;
 
     // M2：联机时上报皮肤名（远端回落 default）
@@ -1407,6 +1413,8 @@ void Floatee::switchFeather(QAction *action)
     if (f == ExecTeeDrawer.featherStrength())
         return;
     ExecTeeDrawer.setFeatherStrength(f);
+    if (EmoticonWin)
+        EmoticonWin->setFeatherStrength(f);   // 表情气泡与 Tee 共用同一 Feather 设置
     RenderedEye = -1;
     updateEyeFollow();           // re-render with the new feather strength
     TrayIcon.setIcon(makeTrayIcon());
@@ -1828,6 +1836,8 @@ void Floatee::applyLiveConfig()
     }
     CurrentEye = qBound(0, Setup.value("Eye").toInt(0), 5);
     ExecTeeDrawer.setFeatherStrength(qBound(0, Setup.value("Feather").toInt(1), 2));
+    if (EmoticonWin)
+        EmoticonWin->setFeatherStrength(ExecTeeDrawer.featherStrength());
     SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
     ExecTeeDrawer.setRenderScale(SizeScale);
     m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);

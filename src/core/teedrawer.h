@@ -58,6 +58,10 @@ public:
     // Persisted by the host (default.json "Feather") and adjustable via tray menu.
     void setFeatherStrength(int strength) { m_featherStrength = qBound(0, strength, 2); }
     int featherStrength() const { return m_featherStrength; }
+    // Edge-only alpha feathering shared by the tee AND the over-head emoticon
+    // bubbles (EmoticonWindow applies it to every rendered bubble frame), so
+    // the single Feather tray menu drives both.
+    static QPixmap featherAlpha(const QPixmap &src, int strength);
     // Fast mode (no SSAA / no feather): used for remote peers on weak devices,
     // where per-frame full-quality rendering can starve the event loop.
     void setFastMode(bool on) { m_fastMode = on; }
@@ -108,13 +112,6 @@ private:
     // 把参考图(256×128)坐标换算为某块的局部坐标并注册 sprite region。
     void registerRegion(int part, teer::ETeeSprite sprite,
                         float rx0, float ry0, float rx1, float ry1);
-    // Post-process: feather the alpha edge (3×3 neighbourhood mean applied only
-    // to semi-transparent pixels, keeping opaque interiors crisp). Small zoom
-    // levels have only ~0.5px of alpha transition (the atlas edge is 1px and
-    // resampling conserves information), which looks jaggy — feathering widens
-    // the transition to ~1–2px for a smooth, anti-aliased edge.
-    // `strength` = number of 3×3 passes (0 = none, 2 = stronger).
-    static QPixmap featherAlpha(const QPixmap &src, int strength);
     // Compute the bounding box of non-transparent pixels (relative to the
     // pixmap origin); empty rect when fully transparent.
     static QRect computeOpaqueRect(const QPixmap &pm);

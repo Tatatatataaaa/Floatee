@@ -154,6 +154,11 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
 {
     if (!m_open)
         return;
+    // Smooth pixmap scaling (bilinear) for the icon drawPixmaps — without this
+    // the wheel's scaled emoticons/eyes sample with nearest-neighbour and look
+    // jagged, exactly like the tee did before the feather fix.
+    p.setRenderHint(QPainter::SmoothPixmapTransform, true);
+    p.setRenderHint(QPainter::Antialiasing, true);
     const QPointF c = m_center;
     const double scl = m_scale;
     const qint64 now = m_animClock.isValid() ? m_animClock.elapsed() : 0;

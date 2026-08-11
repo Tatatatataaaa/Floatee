@@ -28,8 +28,12 @@ static QPixmap downscaleToMaxDim(const QPixmap &src, int maxDim)
 QPixmap TeeDrawer::adjustHsl(const QPixmap &src, int hueShift,
                              double satFactor, double lightFactor)
 {
-    // Use non-premultiplied RGBA8888 (Qt6 canonical format)
-    QImage image = src.toImage().convertToFormat(QImage::Format_RGBA8888);
+    // Use ARGB32 (0xAARRGGBB, native order) — its byte layout matches QRgb,
+    // so reading/writing through a QRgb* is correct. Format_RGBA8888 stores
+    // bytes as R,G,B,A, which silently swaps red and blue when reinterpreted
+    // as QRgb on little-endian — the HSL maths then ran in the wrong colour
+    // space and red/blue-heavy skins came out hue-shifted.
+    QImage image = src.toImage().convertToFormat(QImage::Format_ARGB32);
     for (int y = 0; y < image.height(); ++y) {
         QRgb *line = reinterpret_cast<QRgb*>(image.scanLine(y));
         for (int x = 0; x < image.width(); ++x) {
@@ -176,10 +180,11 @@ void TeeDrawer::renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX,
     const float savedSize = m_info.m_Size;
     m_info.m_Size = renderTee;
     // Supersampled render samples a bigger tee → pick higher-resolution mips.
-    // 三块各自独立选层（QMClient sprite 独立 mip）。
+    // 三块各自独立选层（QMClient sprite 独立 mip）；eyes 用 0.4×tee（与
+    // RenderTee7 的 EyeScale=BaseSize*0.40 一致，0.6 是偏高的旧值）。
     selectMip(PartBody, renderTee);
     selectMip(PartFeet, renderTee * 0.8f);
-    selectMip(PartEyes, renderTee * 0.6f);
+    selectMip(PartEyes, renderTee * 0.4f);
 
     if (pAnim == nullptr)
         pAnim = teer::CAnimState::GetIdle();
@@ -242,31 +247,66 @@ QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
 {
     QPixmap cur = src;
     for (int pass = 0; pass < strength; ++pass) {
-        QImage img = cur.toImage().convertToFormat(QImage::Format_RGBA8888); // non-premultiplied
+        // Non-premultiplied RGBA: we only ever touch the ALPHA channel and
+        // keep every existing pixel's RGB untouched, so internal colour
+        // junctions (pupil, outline↔body, …) never get blurred — only the
+        // silhouette's alpha ramp is widened into the transparent outside.
+        QImage img = cur.toImage().convertToFormat(QImage::Format_RGBA8888);
         const int w = img.width(), h = img.height();
         const int stride = img.bytesPerLine();
         const uchar *bits = img.constBits();
-        QImage out = img.copy();
+        QImage out = img;
         uchar *ob = out.bits();
         for (int y = 0; y < h; ++y) {
             for (int x = 0; x < w; ++x) {
                 const uchar *p = bits + y * stride + x * 4;
                 const int a = p[3];
-                if (a == 0 || a == 255)
-                    continue;                // skip interior/fully-transparent
-                // 3×3 box mean of alpha (edge pixel only) — feathered outward.
-                int sum = 0, n = 0;
+                if (a == 255)
+                    continue;                // opaque interior: always crisp
+                int as = 0, n = 0;
+                int ors = 0, ogs = 0, obs = 0, on = 0;   // opaque neighbours' colour
+                bool touchesOutside = false;
                 for (int dy = -1; dy <= 1; ++dy) {
+                    const int ny = y + dy;
+                    if (ny < 0 || ny >= h)
+                        continue;
+                    const uchar *line = bits + ny * stride;
                     for (int dx = -1; dx <= 1; ++dx) {
-                        const int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h)
+                        const int nx = x + dx;
+                        if (nx < 0 || nx >= w)
                             continue;
-                        sum += bits[ny * stride + nx * 4 + 3];
-                        ++n;
+                        const uchar *q = line + nx * 4;
+                        const int na = q[3];
+                        as += na; ++n;
+                        if (na == 0)
+                            touchesOutside = true;   // neighbourhood reaches the outside
+                        if (na > 0) { ors += q[0]; ogs += q[1]; obs += q[2]; ++on; }
                     }
                 }
+                if (n == 0)
+                    continue;
+                // Feather ONLY the outer silhouette: pixels whose 3×3 touches a
+                // fully transparent pixel. Internal AA edges are surrounded by
+                // opaque pixels → skipped → they stay sharp.
+                if (!touchesOutside)
+                    continue;
+                const int ma = as / n;
+                if (ma == 0)
+                    continue;
+                // Widen the alpha ramp (qMax so thin features are not eroded).
+                const int na = qMax(a, ma);
                 uchar *op = ob + y * stride + x * 4;
-                op[3] = uchar(qMax(a, sum / n)); // grow the edge outward smoothly
+                if (a > 0) {
+                    // keep the original colour EXACTLY — only alpha spreads
+                    op[0] = p[0]; op[1] = p[1]; op[2] = p[2];
+                } else if (on) {
+                    // newly-filled transparent ring: take the silhouette's own
+                    // edge colour so the ramp fades the right colour outward
+                    op[0] = uchar(ors / on); op[1] = uchar(ogs / on); op[2] = uchar(obs / on);
+                } else {
+                    continue;
+                }
+                op[3] = uchar(na);
             }
         }
         cur = QPixmap::fromImage(out);
@@ -320,10 +360,10 @@ void TeeDrawer::setRenderScale(float scale)
     m_canvasSize = qMax(32, qRound(BASE_CANVAS_SIZE * scale));
     m_teeSize = BASE_TEE_SIZE * scale;
     m_info.m_Size = m_teeSize;
-    // 三块各自选 mip（body 渲染尺寸≈tee；feet≈0.8×tee；eyes≈0.6×tee）
+    // 三块各自选 mip（body 渲染尺寸≈tee；feet≈0.8×tee；eyes≈0.4×tee）
     selectMip(PartBody, m_teeSize);
     selectMip(PartFeet, m_teeSize * 0.8f);
-    selectMip(PartEyes, m_teeSize * 0.6f);
+    selectMip(PartEyes, m_teeSize * 0.4f);
 }
 
 // ── Public render entry ────────────────────────────────────────────────
@@ -407,9 +447,13 @@ bool TeeDrawer::load(const QString &skinPath,
     configureRegions(PartFeet, 0, 0);
     configureRegions(PartEyes, 0, 0);
 
-    // Set up render info for protocol-7 six-part skin
+    // Set up render info for protocol-7 six-part skin. Keep the CURRENT render
+    // scale (the host's zoom) instead of hard-resetting to 1.0: resetting here
+    // shrank the tee back to base size after every skin load/reload while the
+    // host's SizeScale stayed high — so wheel zoom-in looked dead until the
+    // user zoomed out once (the saved scale only matched again after that).
     m_info.Reset();
-    setRenderScale(1.0f);   // default: canvas 96, tee 72, picks the best mip
+    setRenderScale(m_teeSize > 0.0f ? m_teeSize / BASE_TEE_SIZE : 1.0f);
     m_info.m_GotAirJump = true;
 
     teer::SSixupSkin &sixup = m_info.m_aSixup[0];

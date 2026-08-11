@@ -98,6 +98,12 @@ bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
     // it from target, so read the painted pixmap back (same pattern as
     // TeeDrawer's `out = m_backend.target`).
     target = m_backend.target;
+    // Edge feathering shared with the tee (same Feather tray menu): apply the
+    // edge-only alpha feather to the rendered bubble frame. Note the frame is
+    // transparent around the bubble, so only the bubble's own silhouette is
+    // feathered — internal colours stay untouched.
+    if (m_featherStrength > 0)
+        target = TeeDrawer::featherAlpha(target, m_featherStrength);
     return true;
 }
 
