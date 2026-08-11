@@ -24,6 +24,7 @@ emoticon-wheel interaction is inspired by QMClient's `CEmoticon`.
 ## ✨ Features
 
 ### Standalone
+
 - Floating translucent pet (full-screen canvas, non-intrusive)
 - Cursor-driven eye follow with distance-based travel
 - Emoticon wheel (16 emotes + 6 eyes) with pop-in / retract animations
@@ -33,6 +34,7 @@ emoticon-wheel interaction is inspired by QMClient's `CEmoticon`.
 - Minimal modern UI (translucent rounded menus, dialogs, inputs)
 
 ### Multiplayer
+
 - Room system (6-digit room ID + 4-char invite code)
 - See other players' Tees, drag/zoom them locally
 - Synced eyes (look direction), skins (auto-fallback to default),
@@ -41,19 +43,16 @@ emoticon-wheel interaction is inspired by QMClient's `CEmoticon`.
 - Automatic download of remote skins from the DDNet skin database (planned)
 - Node.js relay server with room management, throttling and admin API
 
-## ❤️ Contributors
-
-We would like to thank all contributors who have submitted code, reported
-issues and suggested improvements for this project.
-
 ## 🚀 Build
 
 ### Requirements
+
 - CMake ≥ 3.16
 - Qt 6.5+ (Core, Gui, Widgets, Network)
 - A C++17 compiler (MSVC 2019/2022, MinGW, GCC, Clang)
 
 ### Windows
+
 ```bat
 cmake -S . -B build
 cmake --build build --config Release
@@ -61,28 +60,33 @@ cmake --build build --config Release
 ```
 
 ### macOS / Linux
+
 ```sh
 cmake -S . -B build
 cmake --build build -j
 ```
 
 ### Run the multiplayer server
+
 ```sh
 cd server
 npm install
 npm start        # TCP 8764 / WS 9001 / Admin 8766
 ```
+
 See [server/DEPLOYMENT.md](server/DEPLOYMENT.md) for deployment details.
 
 ## ✅ Test
 
 ### Server
+
 ```sh
 cd server
 npm test         # node --test (19 cases)
 ```
 
 ### Client
+
 Build and launch `Floatee`; right-click the tray icon to explore menus.
 
 ## 🏛 Credits

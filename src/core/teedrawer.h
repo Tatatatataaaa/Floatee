@@ -66,7 +66,12 @@ public:
     QPixmap Tee;       // full tee (body + feet + eyes), tee_render layout
 
 private:
-    static constexpr uint32_t SKIN_TEX_ID = 1;
+    // 独立 texture id：body / feet / eyes 各一块独立图（借鉴 QMClient sprite
+    // 独立裁剪+mip，避免整张图集 mip 时不同部位边缘互相污染）
+    static constexpr uint32_t BODY_TEX_ID = 1;
+    static constexpr uint32_t FEET_TEX_ID = 2;
+    static constexpr uint32_t EYES_TEX_ID = 3;
+    enum Part { PartBody = 0, PartFeet = 1, PartEyes = 2, PartCount = 3 };
     // Base (scale 1.0) canvas / tee size.
     static constexpr int BASE_CANVAS_SIZE = 96;
     static constexpr float BASE_TEE_SIZE = 72.0f;
@@ -90,18 +95,19 @@ private:
     int m_featherStrength = 1;
     bool m_fastMode = false;
 
-    // Mip-map chain of the skin atlas (m_mips[0] = largest). Each level is a
-    // clean 2× low-pass of the previous one; the renderer samples the level
-    // whose body region is closest to 1:1 with the current render size, so
-    // zooming in/out never aliases (CPU analogue of GPU mipmaps; trilinear
-    // blending between adjacent levels is optional and not implemented).
-    QVector<QPixmap> m_mips;
+    // 每块独立 mip 链（PartBody/PartFeet/PartEyes），m_mips[p][0] = 最大层。
+    // 各块按“块内最大 sprite 采样比 ≤1 且最接近 1:1”选层（CPU 版 mipmap）。
+    QVector<QPixmap> m_mips[PartCount];
+    QSize m_partSize[PartCount];   // 各块实际像素尺寸
 
-    void buildMipChain(const QPixmap &src);
-    // Select the mip level for the given render tee size (the supersampled
-    // size when SSAA is active, so a higher-resolution atlas is used).
-    void selectMip(float renderTeeSize);
-    void configureRegions(float skinW, float skinH);
+    void buildMipChain(const QPixmap &src, int part);
+    // 为第 part 块选 mip 层：使块内最大 sprite 的采样像素 ≥ 其渲染像素
+    // （renderSize = 该 sprite 的渲染尺寸，SSAA 时已放大）。
+    void selectMip(int part, float renderSize);
+    void configureRegions(int part, float partW, float partH);
+    // 把参考图(256×128)坐标换算为某块的局部坐标并注册 sprite region。
+    void registerRegion(int part, teer::ETeeSprite sprite,
+                        float rx0, float ry0, float rx1, float ry1);
     // Post-process: feather the alpha edge (3×3 neighbourhood mean applied only
     // to semi-transparent pixels, keeping opaque interiors crisp). Small zoom
     // levels have only ~0.5px of alpha transition (the atlas edge is 1px and

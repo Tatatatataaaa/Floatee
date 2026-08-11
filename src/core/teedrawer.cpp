@@ -77,39 +77,53 @@ teer::EEmote TeeDrawer::mapEye(int eyeIdx)
     }
 }
 
-// ── Configure sprite regions for the skin atlas ───────────────────────
-// Coordinates are given in the standard 256×128 reference sheet and are
-// scaled to the actual skin dimensions, so this works for both 256×128 and
-// 4K (4096×2048) skins. All regions are always configured; empty regions
-// render as transparent (no effect).
+// ── Configure sprite regions（按块）──────────────────────────────
+// 参考图 256×128：body 块=(0,0,192,96)（含 body fill + outline）、
+// feet 块=(192,32,256,96)（foot + foot outline）、eyes 块=(0,96,256,128)。
+// 各块裁剪成独立图后，sprite 坐标换算为该块的局部 UV（QMClient sprite 独立
+// 裁剪思路，避免整图 mip 时跨部位边缘污染）。
 
-void TeeDrawer::configureRegions(float skinW, float skinH)
+void TeeDrawer::registerRegion(int part, teer::ETeeSprite sprite,
+                               float rx0, float ry0, float rx1, float ry1)
 {
-    // Scale from the 256×128 reference sheet to the actual skin atlas.
-    const float sx = skinW / 256.0f;
-    const float sy = skinH / 128.0f;
-    const float TW = skinW, TH = skinH;
+    const QSize &sz = m_partSize[part];
+    if (sz.isEmpty())
+        return;
+    const float PW = static_cast<float>(sz.width());
+    const float PH = static_cast<float>(sz.height());
+    // 各块在参考图中的局部尺寸
+    constexpr float BLOCK[PartCount][4] = { {0,0,192,96}, {192,32,256,96}, {0,96,256,128} };
+    const float bx = BLOCK[part][0], by = BLOCK[part][1];
+    const float bw = BLOCK[part][2] - bx, bh = BLOCK[part][3] - by;
+    // 参考坐标 → 块局部 UV
+    const float u0 = (rx0 - bx) / bw, v0 = (ry0 - by) / bh;
+    const float u1 = (rx1 - bx) / bw, v1 = (ry1 - by) / bh;
+    const float pw = (rx1 - rx0) * (PW / bw);   // 块内实际像素宽
+    const float ph = (ry1 - ry0) * (PH / bh);
+    m_renderer.SetSpriteRegion(sprite, teer::SSpriteRegion(u0, v0, u1, v1, pw, ph));
+}
 
-    auto region = [&](float x0, float y0, float x1, float y1) {
-        return teer::SSpriteRegion(x0 * sx / TW, y0 * sy / TH,
-                                   x1 * sx / TW, y1 * sy / TH,
-                                   (x1 - x0) * sx, (y1 - y0) * sy);
-    };
-
-    // Body base (A region): top-left
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_BODY, region(0, 0, 96, 96));
-    // Body outline (B region): next 96×96 to the right
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_BODY_OUTLINE, region(96, 0, 192, 96));
-    // Foot base (E region)
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_FOOT, region(192, 32, 256, 64));
-    // Foot outline (F region)
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_FOOT_OUTLINE, region(192, 64, 256, 96));
-    // Eyes (G1~G4 + H)
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_NORMAL,   region(64, 96, 96, 128));
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_ANGRY,    region(96, 96, 128, 128));
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_PAIN,     region(128, 96, 160, 128));
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_HAPPY,    region(160, 96, 192, 128));
-    m_renderer.SetSpriteRegion(teer::TEE_SPRITE_EYES_SURPRISE, region(224, 96, 256, 128));
+void TeeDrawer::configureRegions(int part, float, float)
+{
+    switch (part) {
+    case PartBody:   // body 块：body fill + outline
+        registerRegion(part, teer::TEE_SPRITE_BODY,          0,  0, 96, 96);
+        registerRegion(part, teer::TEE_SPRITE_BODY_OUTLINE, 96,  0,192, 96);
+        break;
+    case PartFeet:   // feet 块：foot + outline
+        registerRegion(part, teer::TEE_SPRITE_FOOT,        192, 32,256, 64);
+        registerRegion(part, teer::TEE_SPRITE_FOOT_OUTLINE,192, 64,256, 96);
+        break;
+    case PartEyes:   // eyes 块：5 个眼睛（32×32）
+        registerRegion(part, teer::TEE_SPRITE_EYES_NORMAL,   64, 96, 96,128);
+        registerRegion(part, teer::TEE_SPRITE_EYES_ANGRY,    96, 96,128,128);
+        registerRegion(part, teer::TEE_SPRITE_EYES_PAIN,    128, 96,160,128);
+        registerRegion(part, teer::TEE_SPRITE_EYES_HAPPY,   160, 96,192,128);
+        registerRegion(part, teer::TEE_SPRITE_EYES_SURPRISE,224, 96,256,128);
+        break;
+    default:
+        break;
+    }
 }
 
 // ── Render to a QPixmap ────────────────────────────────────────────────
@@ -161,9 +175,11 @@ void TeeDrawer::renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX,
 
     const float savedSize = m_info.m_Size;
     m_info.m_Size = renderTee;
-    // Supersampled render samples a bigger tee → pick a higher-resolution mip
-    // so the upsample stays crisp.
-    selectMip(renderTee);
+    // Supersampled render samples a bigger tee → pick higher-resolution mips.
+    // 三块各自独立选层（QMClient sprite 独立 mip）。
+    selectMip(PartBody, renderTee);
+    selectMip(PartFeet, renderTee * 0.8f);
+    selectMip(PartEyes, renderTee * 0.6f);
 
     if (pAnim == nullptr)
         pAnim = teer::CAnimState::GetIdle();
@@ -258,16 +274,17 @@ QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
     return cur;
 }
 
-// ── Mip-map chain + render scale ───────────────────────────────────────
+// ── Mip-map chain + render scale（按块独立）──────────────────────
 
-void TeeDrawer::buildMipChain(const QPixmap &src)
+void TeeDrawer::buildMipChain(const QPixmap &src, int part)
 {
-    m_mips.clear();
-    // Start from a cleanly-low-passed atlas (≤ MIP_MAX_DIM) and halve it down
+    m_mips[part].clear();
+    // Start from a cleanly-low-passed block (≤ MIP_MAX_DIM) and halve it down
     // to MIP_MIN_DIM; each level is a 2× bilinear low-pass of the previous one.
     QPixmap cur = downscaleToMaxDim(src, MIP_MAX_DIM);
+    m_partSize[part] = cur.size();
     while (true) {
-        m_mips.push_back(cur);
+        m_mips[part].push_back(cur);
         if (qMax(cur.width(), cur.height()) <= MIP_MIN_DIM)
             break;
         cur = cur.scaled(qMax(1, cur.width() / 2), qMax(1, cur.height() / 2),
@@ -275,26 +292,27 @@ void TeeDrawer::buildMipChain(const QPixmap &src)
     }
 }
 
-void TeeDrawer::selectMip(float renderTeeSize)
+void TeeDrawer::selectMip(int part, float renderSize)
 {
-    if (m_mips.isEmpty())
+    auto &chain = m_mips[part];
+    if (chain.isEmpty())
         return;
-    // Body region width at a mip level = 96/256 × atlas width. m_mips is ordered
-    // largest → smallest (index 0 = largest). We want the SMALLEST level whose
-    // body region is still >= the render body size: sampling ratio ≤ 1 (crisp
-    // downscale) while staying as close to 1:1 as possible. Scan from the
-    // smallest level upward so large atlases are not over-sampled (a 1024 atlas
-    // sampled into a 72px body would alias ~5×). If every level is smaller
-    // (zoomed in beyond the chain), fall back to the largest mip (index 0).
+    // 块内最大 sprite 参考宽 / 块参考宽 的比例（决定采样比）
+    constexpr float SPRITE_RATIO[PartCount] = { 96.0f / 192.0f,  // body: body sprite 96/块 192
+                                                64.0f /  64.0f,  // feet: foot 64/块 64
+                                                32.0f / 256.0f };// eyes: eye 32/块 256
+    const float ratio = SPRITE_RATIO[part];
+    // 选最小层使 spritePx(=ratio×块宽) ≥ renderSize（采样比≤1，尽量接近1:1）
     int best = 0;
-    for (int i = m_mips.size() - 1; i >= 0; --i) {
-        const float bodyPx = (BASE_CANVAS_SIZE * m_mips[i].width()) / 256.0f;
-        if (bodyPx >= renderTeeSize) {
+    for (int i = chain.size() - 1; i >= 0; --i) {
+        if (ratio * chain[i].width() >= renderSize) {
             best = i;
             break;
         }
     }
-    m_backend.registerTexture(SKIN_TEX_ID, m_mips[best]);
+    const uint32_t id = (part == PartBody) ? BODY_TEX_ID
+                       : (part == PartFeet) ? FEET_TEX_ID : EYES_TEX_ID;
+    m_backend.registerTexture(id, chain[best]);
 }
 
 void TeeDrawer::setRenderScale(float scale)
@@ -302,7 +320,10 @@ void TeeDrawer::setRenderScale(float scale)
     m_canvasSize = qMax(32, qRound(BASE_CANVAS_SIZE * scale));
     m_teeSize = BASE_TEE_SIZE * scale;
     m_info.m_Size = m_teeSize;
-    selectMip(m_teeSize);
+    // 三块各自选 mip（body 渲染尺寸≈tee；feet≈0.8×tee；eyes≈0.6×tee）
+    selectMip(PartBody, m_teeSize);
+    selectMip(PartFeet, m_teeSize * 0.8f);
+    selectMip(PartEyes, m_teeSize * 0.6f);
 }
 
 // ── Public render entry ────────────────────────────────────────────────
@@ -368,16 +389,23 @@ bool TeeDrawer::load(const QString &skinPath,
     if (hueShift != 0 || satFactor != 1.0 || lightFactor != 1.0)
         SkinFile = adjustHsl(SkinFile, hueShift, satFactor, lightFactor);
 
-    // Build the mip-map chain (each level a clean 2× low-pass of the previous)
-    // and register the level best matching the current render scale. This is
-    // the CPU analogue of GPU mipmaps: sampling stays near 1:1 so zooming in
-    // or out never aliases (a single bilinear pass from a huge atlas would).
-    buildMipChain(SkinFile);
-
-    // Configure sprite regions (normalized UVs are resolution-independent, so
-    // the same regions are valid for every mip level)
-    configureRegions(static_cast<float>(m_mips.first().width()),
-                     static_cast<float>(m_mips.first().height()));
+    // 从整图裁剪三块独立图（body/feet/eyes），各自建 mip 链（QMClient sprite
+    // 独立裁剪思路，避免整图 mip 时跨部位边缘污染）。坐标按实际皮肤尺寸缩放。
+    const int skinW = SkinFile.width(), skinH = SkinFile.height();
+    const auto px = [&](float v, int full) { return qRound(v * full / 256.0f); };
+    const auto py = [&](float v, int full) { return qRound(v * full / 128.0f); };
+    const QPixmap bodyPix = SkinFile.copy(QRect(px(0, skinW), py(0, skinH),
+                                                px(192, skinW), py(96, skinH)));
+    const QPixmap feetPix = SkinFile.copy(QRect(px(192, skinW), py(32, skinH),
+                                                px(64, skinW), py(64, skinH)));
+    const QPixmap eyesPix = SkinFile.copy(QRect(px(0, skinW), py(96, skinH),
+                                                px(256, skinW), py(32, skinH)));
+    buildMipChain(bodyPix, PartBody);
+    buildMipChain(feetPix, PartFeet);
+    buildMipChain(eyesPix, PartEyes);
+    configureRegions(PartBody, 0, 0);
+    configureRegions(PartFeet, 0, 0);
+    configureRegions(PartEyes, 0, 0);
 
     // Set up render info for protocol-7 six-part skin
     m_info.Reset();
@@ -386,10 +414,10 @@ bool TeeDrawer::load(const QString &skinPath,
 
     teer::SSixupSkin &sixup = m_info.m_aSixup[0];
     sixup.Reset();
-    // All parts (body, eyes, feet) come from the same skin atlas (texture id 1)
-    sixup.m_aOriginalTextures[teer::SKINPART_BODY] = teer::STextureHandle(SKIN_TEX_ID);
-    sixup.m_aOriginalTextures[teer::SKINPART_FEET] = teer::STextureHandle(SKIN_TEX_ID);
-    sixup.m_aOriginalTextures[teer::SKINPART_EYES] = teer::STextureHandle(SKIN_TEX_ID);
+    // body/feet/eyes 各用独立纹理 id（对应三块独立 mip 图）
+    sixup.m_aOriginalTextures[teer::SKINPART_BODY] = teer::STextureHandle(BODY_TEX_ID);
+    sixup.m_aOriginalTextures[teer::SKINPART_FEET] = teer::STextureHandle(FEET_TEX_ID);
+    sixup.m_aOriginalTextures[teer::SKINPART_EYES] = teer::STextureHandle(EYES_TEX_ID);
     // Use white colors (texture provides the actual colors)
     sixup.m_aColors[teer::SKINPART_BODY] = teer::ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
     sixup.m_aColors[teer::SKINPART_FEET] = teer::ColorRGBA(1.0f, 1.0f, 1.0f, 1.0f);
