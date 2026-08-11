@@ -1101,7 +1101,9 @@ void Floatee::openEmoticonWheel()
     const float ts = ExecTeeDrawer.teeSize();
     // 中心 = 本地 Tee 中心（全屏画布，widget 坐标 == 屏幕坐标）
     QPointF teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
-    m_emoticonWheel->setScale(1.0);
+    // 圆盘随 Tee 缩放同步，但以 100%（scale=1.0）为上限：Tee 缩放到 >100%
+    // 时圆盘保持 100% 大小（避免过大），Tee <100% 时圆盘同步缩小。
+    m_emoticonWheel->setScale(qMin(1.0, SizeScale));
     // Tee 贴近屏幕边缘时圆盘内移，不被屏幕边界裁断
     const double R = 190.0 * m_emoticonWheel->scale();
     teeCenter.setX(qBound(R, teeCenter.x(), qMax(R, double(width()) - R)));

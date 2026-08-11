@@ -1,6 +1,7 @@
 #include "emoticonwheel.h"
 #include <QPainter>
 #include <QPainterPath>
+#include <QImage>
 #include <cmath>
 
 namespace {
@@ -20,6 +21,40 @@ int indexFromAngle(double angle, int count)
     return int(std::round(a / (2.0 * M_PI) * count)) % count;
 }
 } // namespace
+
+// 眼睛格子里图案的 alpha 加权质心（视觉中心），供内环以质心对齐圆环锚点。
+// 类成员定义必须在匿名命名空间之外。
+QVector<QPointF> EmoticonWheel::computeEyeCentroids(const QPixmap &skin)
+{
+    QVector<QPointF> out;
+    out.reserve(NUM_EYES);
+    const double sx = double(skin.width()) / 256.0;
+    const double sy = double(skin.height()) / 128.0;
+    for (int i = 0; i < NUM_EYES; ++i) {
+        const int x0 = qRound(kEyeRegionX[i] * sx);
+        const int y0 = qRound(kEyeRegionY * sy);
+        const int szx = qRound(kEyeRegionSize * sx);
+        const int szy = qRound(kEyeRegionSize * sy);
+        // ARGB32 与 QRgb 字节序一致；只读 alpha，算图案视觉中心
+        const QImage img = skin.copy(QRect(x0, y0, szx, szy))
+                               .toImage().convertToFormat(QImage::Format_ARGB32);
+        double wa = 0.0, wx = 0.0, wy = 0.0;
+        for (int y = 0; y < img.height(); ++y) {
+            const QRgb *line = reinterpret_cast<const QRgb *>(img.constScanLine(y));
+            for (int x = 0; x < img.width(); ++x) {
+                const int a = qAlpha(line[x]);
+                if (a == 0)
+                    continue;
+                wa += a; wx += a * x; wy += a * y;
+            }
+        }
+        if (wa > 0.0)
+            out.append(QPointF(wx / wa, wy / wa));
+        else
+            out.append(QPointF((img.width() - 1) / 2.0, (img.height() - 1) / 2.0)); // 空 → 格子中心
+    }
+    return out;
+}
 
 EmoticonWheel::EmoticonWheel(QObject *parent)
     : QObject(parent)
@@ -219,8 +254,14 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
 
     // ── 内环：6 个眼睛（从皮肤图集裁取；BLINK=NORMAL 压扁）──
     if (!skinAtlas.isNull()) {
-        // 眼睛区域坐标按 256×128 参考图缩放（与 configureRegions 一致），
-        // 兼容标准 256×128 与 4K(4096×2048) 皮肤
+        // 眼睛图案在 32×32（参考）格子里通常不居中（普遍偏下），若以格子
+        // 几何中心为锚，内环视觉上整体向下偏移（下方三颗最明显）。改为用
+        // 图案的 alpha 加权质心（视觉中心）对准圆环锚点 —— 皮肤无关。
+        // 质心只依赖皮肤图集，缓存到皮肤更换（QPixmap::cacheKey 变化）。
+        if (m_centroidSkin.isNull() || m_centroidSkin.cacheKey() != skinAtlas.cacheKey()) {
+            m_centroidSkin = skinAtlas;
+            m_eyeCentroids = computeEyeCentroids(skinAtlas);
+        }
         const double sx = double(skinAtlas.width()) / 256.0;
         const double sy = double(skinAtlas.height()) / 128.0;
         for (int i = 0; i < NUM_EYES; ++i) {
@@ -236,17 +277,15 @@ void EmoticonWheel::paint(QPainter &p, const QPixmap &emoticonAtlas,
             p.setOpacity(alpha);
             const QRectF src(kEyeRegionX[i] * sx, kEyeRegionY * sy,
                              kEyeRegionSize * sx, kEyeRegionSize * sy);
-            if (i == 5) {
-                // BLINK：垂直压扁
-                const QPixmap normal = skinAtlas.copy(src.toRect());
-                const QPixmap blink = normal.scaled(qRound(size), qRound(size * 0.5),
-                                                    Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
-                p.drawPixmap(QPointF(pos.x() - blink.width() / 2.0,
-                                     pos.y() - blink.height() / 2.0), blink);
-            } else {
-                p.drawPixmap(QRectF(pos.x() - size / 2, pos.y() - size / 2, size, size),
-                             skinAtlas, src);
-            }
+            // 质心在格子内的比例 → 目标矩形内的对应像素（视觉中心对准 pos）
+            const double cw = src.width(), ch = src.height();
+            const QPointF &cent = m_eyeCentroids[i];
+            const double drawW = size;
+            const double drawH = (i == 5) ? size * 0.5 : size;   // BLINK 垂直压扁
+            const double ax = drawW * (cent.x() / cw);
+            const double ay = drawH * (cent.y() / ch);
+            p.drawPixmap(QRectF(pos.x() - ax, pos.y() - ay, drawW, drawH),
+                         skinAtlas, src);
         }
         p.setOpacity(1.0);
     }

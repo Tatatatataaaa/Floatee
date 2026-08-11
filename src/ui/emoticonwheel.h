@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QPixmap>
 #include <QPointF>
+#include <QVector>
 #include <QElapsedTimer>
 #include <QTimer>
 
@@ -34,7 +35,8 @@ public:
     void startClose();               // 触发收回动画后关闭（选择/取消/超时）
     bool isOpen() const { return m_open; }
     const QPointF &center() const { return m_center; }
-    // 整体缩放（0.4~2.0）：全屏=1.0，非全屏跟随 Tee 缩放（基础×SizeScale）
+    // 整体缩放（0.4~2.0）：圆盘随 Tee 缩放同步，但以 100%（scale=1.0）为上限——
+    // Tee 缩放到 >100% 时圆盘保持 100% 大小，Tee <100% 时圆盘同步缩小。
     void setScale(double s) { m_scale = qBound(0.4, s, 2.0); }
     double scale() const { return m_scale; }
 
@@ -70,6 +72,9 @@ private:
     static constexpr int kEyeRegionX[6] = { 64, 160, 96, 128, 224, 64 };
     static constexpr int kEyeRegionY = 96;
     static constexpr int kEyeRegionSize = 32;
+    // 每个眼睛格子里图案的 alpha 加权质心（视觉中心，相对格子左上角像素）。
+    // 素材在格子里通常不居中（普遍偏下），绘制时以质心对齐圆环锚点。
+    static QVector<QPointF> computeEyeCentroids(const QPixmap &skin);
 
     bool m_open = false;
     QPointF m_center;
@@ -77,6 +82,9 @@ private:
     int m_selEmoticon = -1;
     int m_selEye = -1;
     double m_scale = 1.0;
+    // 眼睛质心缓存：皮肤（QPixmap::cacheKey）变化时才重算
+    mutable QVector<QPointF> m_eyeCentroids;
+    mutable QPixmap m_centroidSkin;
 
     // 弹出动画：打开时启动，每 item 错开延迟 + 回弹缩放
     QElapsedTimer m_animClock;
