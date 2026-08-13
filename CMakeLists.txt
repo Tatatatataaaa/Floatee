@@ -23,7 +23,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network)
 set(TEE_RENDER_BUILD_EXAMPLE OFF CACHE BOOL "" FORCE)
 add_subdirectory(tee_render)
 
-# Platform-specific sources
+# Platform-specific sources (window-manager integration; other platforms use
+# a no-op stub so the project still configures, compiles and links everywhere)
 if(WIN32)
     set(PLATFORM_SOURCES
         src/platform/platformwindowinfo_win.cpp
@@ -35,10 +36,21 @@ elseif(APPLE)
     find_library(COCOA_LIBRARY Cocoa REQUIRED)
     find_library(APPKIT_LIBRARY AppKit REQUIRED)
     find_library(APP_SERVICES ApplicationServices REQUIRED)
+    # windowsidehide / platformwindowinfo_mac use AppKit + Accessibility APIs
+    set(PLATFORM_LIBS ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${APP_SERVICES})
+elseif(ANDROID)
+    set(PLATFORM_SOURCES
+        src/platform/platformwindowinfo_stub.cpp
+    )
 elseif(UNIX)
     find_package(X11 REQUIRED)
     set(PLATFORM_SOURCES
         src/platform/platformwindowinfo_x11.cpp
+    )
+    set(PLATFORM_LIBS X11::X11)
+else()
+    set(PLATFORM_SOURCES
+        src/platform/platformwindowinfo_stub.cpp
     )
 endif()
 
@@ -107,10 +119,10 @@ if(APPLE)
         MACOSX_BUNDLE_ICON_FILE "Floatee.icns"
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist"
     )
-    set_source_files_properties(assets/Floatee.icns PROPERTIES
+    set_source_files_properties(assets/main/Floatee.icns PROPERTIES
         MACOSX_PACKAGE_LOCATION "Resources"
     )
-    target_sources(Floatee PRIVATE assets/Floatee.icns)
+    target_sources(Floatee PRIVATE assets/main/Floatee.icns)
 endif()
 
 target_link_libraries(Floatee PRIVATE
@@ -119,6 +131,7 @@ target_link_libraries(Floatee PRIVATE
     Qt6::Widgets
     Qt6::Network
     tee_render
+    ${PLATFORM_LIBS}
 )
 
 # ── Post-build: copy MinGW runtime DLLs (windeployqt doesn't handle these) ──

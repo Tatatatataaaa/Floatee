@@ -41,6 +41,17 @@ public:
         Q_UNUSED(handle)
         // Not needed on macOS — the fallback fullscreen overlay handles this via Qt flags.
     }
+
+    void setWindowClickThrough(void* handle, bool on) override
+    {
+        // winId() on macOS returns the QNSView*; its NSWindow drives hit-testing.
+        // Setting ignoresMouseEvents=YES makes the whole window pass clicks
+        // through to windows below; NO makes it capture them (tee interactable).
+        NSView *view = (__bridge NSView *)handle;
+        NSWindow *window = [view window];
+        if (window)
+            window.ignoresMouseEvents = on ? YES : NO;
+    }
 };
 
 PlatformWindowInfo* PlatformWindowInfo::create()

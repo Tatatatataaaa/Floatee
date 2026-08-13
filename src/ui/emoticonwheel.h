@@ -45,6 +45,19 @@ public:
     // 点击提交（屏幕坐标）→ 命中结果
     Result submitAt(const QPointF &g) const;
 
+    // 点是否在圆盘交互范围内（外圆半径 + 边缘容差，屏幕坐标）。
+    // host 的穿透判定用它把圆盘区域也设为可交互，否则圆盘大部分区域
+    // （Tee 身体之外）会被判定为穿透而无法点击。
+    bool contains(const QPointF &g) const
+    {
+        if (!m_open)
+            return false;
+        const double r = kOuterBgR * m_scale + 16.0;
+        const double dx = g.x() - m_center.x();
+        const double dy = g.y() - m_center.y();
+        return dx * dx + dy * dy <= r * r;
+    }
+
     int selectedEmoticon() const { return m_selEmoticon; }
     int selectedEye() const { return m_selEye; }
 

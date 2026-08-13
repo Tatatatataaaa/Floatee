@@ -130,8 +130,17 @@ void Floatee::Loading()
 
 void Floatee::Initialize()
 {
+    // NoDropShadowWindowHint：macOS 透明窗口的阴影（围绕非透明内容生成）
+    // 在内容移动后可能残留（WindowServer 合成缓存旧帧 → 灰色 Tee 轮廓残影）。
+    // 仅 macOS 需要；Windows 的阴影由 DWM 提供且无此合成残留问题，保持原有
+    // flags 以免改变窗口外观/行为。
+#ifdef Q_OS_MACOS
+    setWindowFlags(Qt::FramelessWindowHint | Qt::Tool | Qt::NoDropShadowWindowHint);
+    dbgWin(QStringLiteral("[init] setWindowFlags FramelessWindowHint|Tool|NoDropShadow"));
+#else
     setWindowFlags(Qt::FramelessWindowHint | Qt::Tool);
     dbgWin(QStringLiteral("[init] setWindowFlags FramelessWindowHint|Tool"));
+#endif
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_MacAlwaysShowToolWindow, true);
@@ -559,8 +568,7 @@ void Floatee::mousePressEvent(QMouseEvent *event)
 {
     // M2 全屏画布：左键拖拽命中的 Tee（本地或远端，仅本地摆放）；右键 M4 表情圆盘
     if (m_fullscreenCanvas) {
-        if (event->button() == Qt::RightButton) {
-            // M4：右键本地 Tee → 表情圆盘；右键远端 Tee → 管理菜单
+        if (event->button() == Qt::RightButton) {            // M4：右键本地 Tee → 表情圆盘；右键远端 Tee → 管理菜单
             const QPoint g = event->globalPosition().toPoint();
             QString roleId;
             if (hitTestTee(g, &roleId)) {
@@ -672,7 +680,9 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
     if (m_fullscreenCanvas) {
         if (m_emoticonWheel && m_emoticonWheel->isOpen() && event->button() == Qt::LeftButton) {
-            submitEmoticonWheel(QPointF(event->position()));
+            // 全屏圆盘中心是全局坐标，提交也必须用全局坐标（用窗口内坐标会
+            // 与中心错位 44px，导致下方表情点不中/被穿透）
+            submitEmoticonWheel(QPointF(event->globalPosition().toPoint()));
             return;
         }
         const bool wasDraggingLocal = m_dragging && m_dragRoleId.isEmpty();
@@ -764,6 +774,11 @@ void Floatee::paintEvent(QPaintEvent *event)
     // M2：联机全屏画布 —— 本地 + 远端 Peer 的 Tee 都画在屏幕上（屏幕坐标=画布坐标）
     if (m_fullscreenCanvas) {
         QPainter p(this);
+        // 全屏画布的所有位置（m_localTeePos / peer pos / 表情 / 气泡 / 圆盘）
+        // 都是全局（屏幕）坐标；macOS 上窗口不在原点（availableGeometry 从
+        // (0,44) 开始），必须把 painter 平移到全局坐标系，绘制才与实际命中
+        // 区域对齐（否则 Tee/圆盘显示位置比可点击区域低 44px）。
+        p.translate(-QPointF(pos()));
         p.drawPixmap(qRound(m_localTeePos.x()), qRound(m_localTeePos.y()), ExecTeeDrawer.Tee);
         for (const auto &pr : m_peersRender) {
             if (!pr.drawer || pr.drawer->canvasSize() <= 0 || pr.hidden)
@@ -789,6 +804,8 @@ void Floatee::paintEvent(QPaintEvent *event)
         if (m_emoticonWheel && m_emoticonWheel->isOpen())
             m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
                                    ExecTeeDrawer.SkinFile);
+        // 子控件/背景按窗口内坐标绘制，恢复变换后再交给 QMainWindow
+        p.resetTransform();
         QMainWindow::paintEvent(event);
         return;
     }
@@ -937,7 +954,9 @@ void Floatee::showEmoticonOnTee(int index, const QString &key)
     float teeSize = ExecTeeDrawer.teeSize();
     if (key.isEmpty()) {
         const int cs = ExecTeeDrawer.canvasSize();
-        teeCenter = m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * teeSize);
+        // 全屏用全局 m_localTeePos，非全屏用窗口内 m_teePos（与 paint 一致）
+        teeCenter = (m_fullscreenCanvas ? m_localTeePos : m_teePos)
+                  + QPointF(cs / 2.0, cs / 2.0 + 0.12 * teeSize);
     } else {
         const auto it = m_peersRender.constFind(key);
         if (it == m_peersRender.constEnd() || !it->drawer)
@@ -1040,23 +1059,32 @@ void Floatee::enterFullscreenCanvas()
 #endif
     dbgWin(QStringLiteral("[fullscreen] final scr=%1")
         .arg(rectStr(scr.x(), scr.y(), scr.width(), scr.height())));
+    setGeometry(scr);
+    // 必须在 setGeometry 之后才 clamp：clampTeePos 依赖 width()/height()，
+    // 若在放大前调用会按初始化窗口 192×275 把 Tee 钳到左上角（m_localTeePos
+    // 变成 (46,120)），Tee 显示错位且永远进不了屏幕中心。
     const QPointF center = QRectF(scr).center();
     const int cs = ExecTeeDrawer.canvasSize();
     m_localTeePos = clampTeePos(center - QPointF(cs / 2.0, cs / 2.0), ExecTeeDrawer.opaqueRect());
-    setGeometry(scr);
     dbgWin(QStringLiteral("[fullscreen] after setGeometry geom=%1")
         .arg(rectStr(geometry().x(), geometry().y(), geometry().width(), geometry().height())));
     m_fullscreenCanvas = true;
     m_transparent = true;
+    if (!m_platformInfo)
+        m_platformInfo = PlatformWindowInfo::create();
+#ifdef Q_OS_MACOS
+    if (m_platformInfo)
+        m_platformInfo->setWindowClickThrough(
+            reinterpret_cast<void *>(winId()), true);
+#else
     setAttribute(Qt::WA_TransparentForMouseEvents, true);
+#endif
     m_hitTestTimer->start();
     if (EyeFollowTimer) EyeFollowTimer->setInterval(33);   // 全屏整屏重绘降频
     // Floatee 置顶顶层（Win32 HWND_TOPMOST）：保证在普通窗口之上。
     // 注意：不周期强制任务栏置顶——那会盖住托盘菜单。任务栏不被 Floatee
     // 遮挡的保障是上面的 AppBar 区域裁切（Floatee 避开任务栏区域），任务栏
     // 保持系统默认 topmost 即可。
-    if (!m_platformInfo)
-        m_platformInfo = PlatformWindowInfo::create();
     if (m_platformInfo)
         m_platformInfo->setWindowTopmost(reinterpret_cast<void *>(winId()));
     RenderedEye = -1;
@@ -1106,8 +1134,11 @@ void Floatee::openEmoticonWheel()
     m_emoticonWheel->setScale(qMin(1.0, SizeScale));
     // Tee 贴近屏幕边缘时圆盘内移，不被屏幕边界裁断
     const double R = 190.0 * m_emoticonWheel->scale();
-    teeCenter.setX(qBound(R, teeCenter.x(), qMax(R, double(width()) - R)));
-    teeCenter.setY(qBound(R, teeCenter.y(), qMax(R, double(height()) - R)));
+    // 全屏：teeCenter 是全局坐标，钳制在全屏窗口的全局范围内；
+    // 非全屏：teeCenter 是窗口内坐标，钳制在窗口矩形内。
+    const QRect bound = m_fullscreenCanvas ? geometry() : rect();
+    teeCenter.setX(qBound(R, teeCenter.x(), qMax(R, double(bound.right()) - R)));
+    teeCenter.setY(qBound(R, teeCenter.y(), qMax(R, double(bound.bottom()) - R)));
     m_emoticonWheel->open(teeCenter);
     setCursor(Qt::CrossCursor);
     update();
@@ -1671,11 +1702,22 @@ QPointF Floatee::clampTeePos(QPointF pos, const QRect &opaqueBox) const
     if (opaqueBox.isNull() || opaqueBox.isEmpty())
         return pos;   // 无渲染像素 → 不钳制
     // opaqueBox 相对 canvas 左上角；实际渲染像素范围 = [pos+left, pos+right]
-    // （QRect left/right 均含）。要求完全落在画布 [0, W-1]×[0, H-1] 内：
-    const double minX = -opaqueBox.left();
-    const double minY = -opaqueBox.top();
-    const double maxX = double(width()) - 1 - opaqueBox.right();
-    const double maxY = double(height()) - 1 - opaqueBox.bottom();
+    // （QRect left/right 均含）。要求完全落在画布 [0, W-1]×[0, H-1] 内。
+    // 全屏画布：pos 是全局（屏幕）坐标，钳制在「窗口全局位置 + 尺寸」范围内；
+    // 非全屏：pos 是窗口内坐标，钳制在窗口矩形内。
+    double minX, minY, maxX, maxY;
+    if (m_fullscreenCanvas) {
+        const double ox = this->pos().x(), oy = this->pos().y();
+        minX = ox - opaqueBox.left();
+        minY = oy - opaqueBox.top();
+        maxX = ox + double(width()) - 1 - opaqueBox.right();
+        maxY = oy + double(height()) - 1 - opaqueBox.bottom();
+    } else {
+        minX = -opaqueBox.left();
+        minY = -opaqueBox.top();
+        maxX = double(width()) - 1 - opaqueBox.right();
+        maxY = double(height()) - 1 - opaqueBox.bottom();
+    }
     pos.setX(qBound(minX, pos.x(), qMax(minX, maxX)));
     pos.setY(qBound(minY, pos.y(), qMax(minY, maxY)));
     return pos;
@@ -1685,17 +1727,38 @@ bool Floatee::hitTestTee(const QPoint &g, QString *outRoleId, int pad) const
 {
     const QPointF gf(g);
     if (m_fullscreenCanvas) {
-        const int lcs = ExecTeeDrawer.canvasSize();
-        if (QRectF(m_localTeePos, QSizeF(lcs + 2 * pad, lcs + 2 * pad))
-                .adjusted(-pad, -pad, pad, pad).contains(gf)) {
-            if (outRoleId) outRoleId->clear();   // 空 = 本地 Tee
-            return true;
+        // 用 Tee 实际不透明像素包围盒（opaqueRect，相对 canvas）做命中判定，
+        // 而不是整个 canvas 正方形——否则 canvas 内 Tee 外的透明区域也会被
+        // 判定为"命中"（交互区域变成一个正方形，点击 Tee 周围空白被窗口
+        // 拦截而无法穿透到后面窗口）。pad 只做边缘微容差。
+        const QRect opaque = ExecTeeDrawer.opaqueRect();
+        if (!opaque.isNull() && !opaque.isEmpty()) {
+            if (QRectF(opaque).adjusted(-pad, -pad, pad, pad)
+                    .contains(gf - m_localTeePos)) {
+                if (outRoleId) outRoleId->clear();   // 空 = 本地 Tee
+                return true;
+            }
+        } else {
+            // 兜底：无渲染像素时退回 canvas 矩形
+            const int lcs = ExecTeeDrawer.canvasSize();
+            if (QRectF(m_localTeePos, QSizeF(lcs + 2 * pad, lcs + 2 * pad))
+                    .adjusted(-pad, -pad, pad, pad).contains(gf)) {
+                if (outRoleId) outRoleId->clear();
+                return true;
+            }
         }
     }
     for (auto it = m_peersRender.constBegin(); it != m_peersRender.constEnd(); ++it) {
         if (!it->drawer || it->hidden) continue;
-        const int cs = it->drawer->canvasSize();
-        if (cs > 0 && QRectF(it->pos, QSizeF(cs, cs)).adjusted(-pad, -pad, pad, pad).contains(gf)) {
+        // 远端 Tee 同样用各自 drawer 的 opaqueRect（贴合形状，而非 canvas 正方形）
+        const QRect opaque = it->drawer->opaqueRect();
+        if (opaque.isNull() || opaque.isEmpty()) {
+            const int cs = it->drawer->canvasSize();
+            if (cs > 0 && QRectF(it->pos, QSizeF(cs, cs)).adjusted(-pad, -pad, pad, pad).contains(gf)) {
+                if (outRoleId) *outRoleId = it.key();
+                return true;
+            }
+        } else if (QRectF(opaque).adjusted(-pad, -pad, pad, pad).contains(gf - it->pos)) {
             if (outRoleId) *outRoleId = it.key();
             return true;
         }
@@ -1710,17 +1773,42 @@ void Floatee::onHitTestTick()
     // 计算期望的穿透状态；拖拽中锁定为可交互（否则鼠标移出命中框就会
     // 重新穿透，窗口收不到 mouseMove 导致拖拽中断）。
     bool want;
-    if (m_dragging)
+    if (m_dragging) {
         want = false;
-    else
+    } else if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
+        // 表情圆盘打开：命中 = Tee 身体 ∪ 圆盘范围（否则圆盘大部分区域在
+        // Tee 身体之外，会被判定为穿透而无法点击表情）。
+        const QPoint cp = QCursor::pos();
+        want = !(hitTestTee(cp, nullptr, 14) || m_emoticonWheel->contains(cp));
+    } else {
         want = !hitTestTee(QCursor::pos(), nullptr, 14);
-    // 仅在状态真正变化时 setAttribute：反复设置同一值会让 Qt 频繁做窗口
+    }
+    // 仅在状态真正变化时应用穿透：反复设置同一值会让 Qt 频繁做窗口
     // 系统样式操作（WS_EX_LAYERED 上尤其重），是主线程挂起(Application Hang)
     // 的重要来源。
     if (want != m_transparent) {
         m_transparent = want;
-        dbgWin(QStringLiteral("[hit] transparent=%1 setAttribute").arg(want));
+        const QPoint cp = QCursor::pos();
+        dbgWin(QStringLiteral("[hit] transparent=%1 apply mouse=%2x%3 m_localTeePos=%4x%5 canvas=%6 opaque=%7x%8+%9+%10")
+            .arg(want).arg(cp.x()).arg(cp.y())
+            .arg(m_localTeePos.x()).arg(m_localTeePos.y())
+            .arg(ExecTeeDrawer.canvasSize())
+            .arg(ExecTeeDrawer.opaqueRect().width()).arg(ExecTeeDrawer.opaqueRect().height())
+            .arg(ExecTeeDrawer.opaqueRect().x()).arg(ExecTeeDrawer.opaqueRect().y()));
+        // macOS：WA_TransparentForMouseEvents / WindowTransparentForInput 的
+        // native 运行时切换不可靠（QNSView 的 isTransparentForUserInput 只
+        // 看 window flag，而 ignoresMouseEvents 设置 false 后不会自动恢复
+        // 接收），因此由平台层直接操作 NSWindow.ignoresMouseEvents。其余平台
+        // 沿用 widget attribute。
+#ifdef Q_OS_MACOS
+        if (!m_platformInfo)
+            m_platformInfo = PlatformWindowInfo::create();
+        if (m_platformInfo)
+            m_platformInfo->setWindowClickThrough(
+                reinterpret_cast<void *>(winId()), want);
+#else
         setAttribute(Qt::WA_TransparentForMouseEvents, want);
+#endif
     }
 }
 
