@@ -912,7 +912,10 @@ void Floatee::paintEvent(QPaintEvent *event)
     QPainter p(this);
     p.drawPixmap(qRound(m_teePos.x()), qRound(m_teePos.y()), ExecTeeDrawer.Tee);
     if (EmoticonWin && EmoticonWin->isActive()) {
-        QPixmap frame(width(), height());
+        // HiDPI：气泡帧按屏幕物理像素渲染（像素 = 逻辑 × dpr），避免放大失真
+        const qreal fdpr = ExecTeeDrawer.devicePixelRatio();
+        QPixmap frame(qRound(width() * fdpr), qRound(height() * fdpr));
+        frame.setDevicePixelRatio(fdpr);
         frame.fill(Qt::transparent);
         const QPointF teeCenter = m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
         const bool ok = EmoticonWin->renderFrame(frame, teeCenter);
@@ -1679,7 +1682,10 @@ void Floatee::paintEmoticonsFullscreen(QPainter &p)
         const double half = 40.0 * scale;
         const int box = qCeil(half * 2.0);
         const QPointF bubble(teeCenter.x(), teeCenter.y() - 55.0 * scale);
-        QPixmap frame(box, box);
+        // HiDPI：气泡帧按屏幕物理像素渲染（像素 = 逻辑 × dpr），避免放大失真
+        const qreal fdpr = ExecTeeDrawer.devicePixelRatio();
+        QPixmap frame(qRound(box * fdpr), qRound(box * fdpr));
+        frame.setDevicePixelRatio(fdpr);
         // frame 内 TeePos：使气泡中心落在 frame 中央 (half, half)；表情尺寸
         // 跟随当前 teeSize，与缓冲盒（同一 teeSize 计算）一致，不裁断
         if (EmoticonWin->renderFrame(frame, key, QPointF(half, half + 55.0 * scale), teeSize))

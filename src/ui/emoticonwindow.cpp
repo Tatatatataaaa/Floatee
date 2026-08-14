@@ -102,8 +102,11 @@ bool EmoticonWindow::renderFrame(QPixmap &target, const QString &key,
     // edge-only alpha feather to the rendered bubble frame. Note the frame is
     // transparent around the bubble, so only the bubble's own silhouette is
     // feathered — internal colours stay untouched.
-    if (m_featherStrength > 0)
+    if (m_featherStrength > 0) {
+        const qreal dpr = target.devicePixelRatio();
         target = TeeDrawer::featherAlpha(target, m_featherStrength);
+        target.setDevicePixelRatio(dpr);   // fromImage 会丢 dpr，恢复以保持物理像素
+    }
     return true;
 }
 
