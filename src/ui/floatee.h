@@ -16,6 +16,7 @@
 #include <QSystemTrayIcon>
 #include <QPropertyAnimation>
 #include <QProcess>
+#include <QInputMethodEvent>
 #include <memory>
 
 #include "ui/windowsidehide.h"
@@ -26,6 +27,8 @@
 #include "core/jsonopt.h"
 #include "core/teedrawer.h"
 #include "platform/platformwindowinfo.h"
+
+class QLineEdit;
 
 QT_BEGIN_NAMESPACE
 namespace Ui {
@@ -165,7 +168,19 @@ public:
     // 聊天气泡：roleId（空 = 本地）文本 + 开始时间，3s 后消失
     struct ChatBubble { QString roleId; QString text; qint64 startMs = 0; };
     QVector<ChatBubble> m_chatBubbles;
-    QTimer *m_chatTimer = nullptr;              // 聊天气泡过期检查/重绘
+    QTimer *m_chatTimer = nullptr;              // 聊天气泡过期检查/重绘/光标闪烁
+    // ── M6 消息系统：纵向消息列表 + 自绘输入框（与消息框同款样式）──
+    bool m_chatInput = false;               // 输入框是否打开（Enter 发送，Esc 关闭）
+    QString m_chatInputText;                // 已确认文本（IME commit）
+    QString m_chatPreedit;                  // IME 组合中文本（preedit）
+    int m_chatCursor = 0;                   // 光标位置（确认文本内）
+    bool m_chatCursorVisible = true;        // 光标闪烁（m_chatTimer 切换）
+    qint64 m_chatLastInputMs = 0;           // 最后输入时间（空白输入框 5s 无输入自动关闭）
+    bool m_teeClicked = false;              // 最近一次点击命中本地 Tee（回车快速唤起输入框）
+    qint64 m_chatCloseMs = 0;               // 输入框关闭时间（关闭后短暂抑制回车唤起，防自动重开）
+    int m_chatAreaH = 0;                    // 非全屏时窗口向上扩展的消息区高度（Tee 屏幕位置不变）
+    QRectF m_chatInputRect;                 // 当前帧输入框矩形（屏幕坐标，供 inputMethodQuery）
+    QLineEdit *m_imeEdit = nullptr;         // IME 代理：透明 QLineEdit，承载系统输入法焦点
     EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
     bool m_fullscreenEntered = false;           // 首次 show 后进入全屏（防重复）
     bool m_autoConnecting = false;              // 启动自动连接中：结果弹窗 2s 自动关闭
@@ -201,6 +216,13 @@ public:
     // when the window really gains/loses focus (filters spurious activation
     // events that some apps like Chromium/Electron emit periodically).
     bool m_wasActive = false;
+
+protected:
+    // M6 自绘输入框的 IME 支持：preedit/commit 与光标候选框定位
+    void inputMethodEvent(QInputMethodEvent *event) override;
+    QVariant inputMethodQuery(Qt::InputMethodQuery query) const override;
+    // 捕获 IME 代理（QLineEdit）上的组合文本（Qt 6 QInputMethod 无 preeditString）
+    bool eventFilter(QObject *obj, QEvent *event) override;
 
 protected slots:
     void on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason);
@@ -285,10 +307,19 @@ protected slots:
     void onEmoticonReceivedMp(const QString &roleId, int index);
     // 聊天：收到远端/本地聊天气泡
     void onChatReceivedMp(const QString &roleId, const QString &text);
-    // 托盘入口：发送聊天
-    void sendChatMessage();
-    // 全屏画布内渲染聊天气泡
-    void paintChatBubbles(QPainter &p);
+    // ── M6：消息输入 / 纵向消息列表 ──
+    void openChatInput();                   // 打开输入框（聚焦窗口 + 唤起 IME）
+    void closeChatInput();                  // 关闭输入框（丢弃内容）
+    void submitChatInput();                 // 回车发送（空内容则关闭输入框）
+    void addChatMessage(const QString &roleId, const QString &text);  // 加入列表，10s 自动消失
+    // 渲染一个 Tee 的消息区（输入框 + 其消息列表）；anchor 为 Tee 中心
+    // （全屏=屏幕坐标，非全屏=窗口坐标），scale = teeSize/64
+    void paintChatAreaFor(QPainter &p, const QString &roleId,
+                          const QPointF &anchor, float scale);
+    void paintChatBubbles(QPainter &p);     // 全屏画布：分发到本地 + 每个远端 Tee
+    void updateChatWindowExtend();          // 非全屏：有消息/输入框时向上扩展窗口
+    QPointF localTeeCenterGlobal() const;   // 本地 Tee 中心（全局屏幕坐标）
+    QRectF chatInputScreenRect() const;     // 输入框矩形（屏幕坐标；未打开为空）
     // M4：全屏画布内渲染所有活跃表情（本地 + 每个远端 Tee）
     void paintEmoticonsFullscreen(QPainter &p);
 

@@ -19,6 +19,7 @@
 #include <QVBoxLayout>
 #include <QInputDialog>
 #include <QLineEdit>
+#include <QInputMethod>
 #include <QProcess>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -144,6 +145,9 @@ void Floatee::Initialize()
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_MacAlwaysShowToolWindow, true);
+    // 消息输入框需要键盘焦点 + 系统输入法（IME）：允许窗口成为键盘焦点目标。
+    // QMainWindow 默认 NoFocus，无焦点时 Qt 不会启用 TSF 输入法（无法唤出中文输入法）。
+    setFocusPolicy(Qt::StrongFocus);
 
     // Load saved skin preference with per-skin HSL adjustments
     QString savedSkin = Setup.value("Skin").toString();
@@ -404,9 +408,9 @@ void Floatee::Initialize()
     });
     TrayMenu->addMenu(EmoticonMenu);
 
-    // ── 聊天：发送消息入口 ──
+    // ── 聊天：发送消息入口（打开自绘输入框，与消息框同款样式）──
     QAction *chatAction = TrayMenu->addAction("Send Message...");
-    connect(chatAction, &QAction::triggered, this, &Floatee::sendChatMessage);
+    connect(chatAction, &QAction::triggered, this, &Floatee::openChatInput);
 
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
@@ -527,14 +531,54 @@ void Floatee::Initialize()
     connect(EmoticonWin, &EmoticonWindow::frameChanged, this, qOverload<>(&QWidget::update));
     m_emoticonWheel = new EmoticonWheel(this);   // M4：表情圆盘（全屏画布 overlay）
     connect(m_emoticonWheel, &EmoticonWheel::frameChanged, this, qOverload<>(&QWidget::update));
-    // 聊天气泡过期检查/重绘
+    // 聊天气泡过期检查（10s 自动消失）/ 输入框光标闪烁 / 窗口扩展收缩
     m_chatTimer = new QTimer(this);
     m_chatTimer->setInterval(300);
     connect(m_chatTimer, &QTimer::timeout, this, [this]() {
-        if (!m_chatBubbles.isEmpty())
+        const qint64 now = QDateTime::currentMSecsSinceEpoch();
+        bool removed = false;
+        for (int i = m_chatBubbles.size() - 1; i >= 0; --i) {
+            if (now - m_chatBubbles[i].startMs > 10000) {
+                m_chatBubbles.removeAt(i);
+                removed = true;
+            }
+        }
+        if (m_chatInput) {
+            m_chatCursorVisible = !m_chatCursorVisible;
+            // 输入框空白且 5s 无输入 → 自动关闭（同时收起非全屏窗口扩展）
+            const bool empty =
+                (m_imeEdit ? m_imeEdit->text().isEmpty() : m_chatInputText.isEmpty())
+                && m_chatPreedit.isEmpty();
+            if (empty && now - m_chatLastInputMs > 5000) {
+                closeChatInput();
+                return;
+            }
+        }
+        if (removed)
+            updateChatWindowExtend();
+        if (removed || m_chatInput || !m_chatBubbles.isEmpty())
             update();
     });
     m_chatTimer->start();
+    // M6 IME 代理：Qt 只在标准文本控件（QLineEdit 等）上可靠地启用系统输入法
+    // （Windows TSF）。自绘 QMainWindow 即使 ImEnabled=true 也常唤不起输入法；
+    // 改用完全透明、置于输入框位置的小 QLineEdit 承载输入法焦点，文本/组合/回车
+    // 经信号同步到自绘输入框，保证中文输入法可正常唤起、候选框定位正确。
+    m_imeEdit = new QLineEdit(this);
+    m_imeEdit->setFrame(false);
+    m_imeEdit->setFocusPolicy(Qt::StrongFocus);
+    m_imeEdit->setStyleSheet(
+        "QLineEdit { background: transparent; border: none;"
+        " color: transparent; selection-background-color: transparent; }");
+    m_imeEdit->installEventFilter(this);   // 捕获组合文本（见 eventFilter）
+    connect(m_imeEdit, &QLineEdit::textChanged, this, [this](const QString &t) {
+        m_chatInputText = t;
+        m_chatLastInputMs = QDateTime::currentMSecsSinceEpoch();
+        update();
+    });
+    connect(m_imeEdit, &QLineEdit::returnPressed, this, [this]() {
+        submitChatInput();
+    });
     EmoticonRandomTimer = new QTimer(this);
     EmoticonRandomTimer->setInterval(10000);   // check every 10s
     connect(EmoticonRandomTimer, &QTimer::timeout, this, &Floatee::onRandomEmoticonTick);
@@ -566,6 +610,15 @@ Floatee::~Floatee()
 
 void Floatee::mousePressEvent(QMouseEvent *event)
 {
+    // M6 便捷入口：记录点击命中本地 Tee（随后按回车即唤起输入框）。
+    // 全屏：用 hitTestTee（屏幕坐标）；非全屏：窗口即 Tee，点击窗口即命中。
+    if (m_fullscreenCanvas) {
+        const QPoint g = event->globalPosition().toPoint();
+        QString roleId;
+        m_teeClicked = hitTestTee(g, &roleId) && roleId.isEmpty();
+    } else {
+        m_teeClicked = true;
+    }
     // M2 全屏画布：左键拖拽命中的 Tee（本地或远端，仅本地摆放）；右键 M4 表情圆盘
     if (m_fullscreenCanvas) {
         if (event->button() == Qt::RightButton) {            // M4：右键本地 Tee → 表情圆盘；右键远端 Tee → 管理菜单
@@ -718,6 +771,34 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 
 void Floatee::keyPressEvent(QKeyEvent *event)
 {
+    // ── M6 输入框打开：所有按键进入输入逻辑 ──
+    if (m_chatInput) {
+        // 文本输入由 IME 代理 QLineEdit 处理（含系统输入法）；这里只兜底：
+        // Esc 取消、Enter 发送（焦点不在代理上时也能用）。isAutoRepeat 的回车
+        // 忽略，防止按住回车导致“发送→自动打开”抖动。
+        if (event->key() == Qt::Key_Escape) {
+            closeChatInput();
+        } else if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
+                   && !event->isAutoRepeat()) {
+            submitChatInput();
+        }
+        event->accept();
+        return;
+    }
+    // 便捷入口：点击本地 Tee 后按回车 → 打开输入框（忽略按住产生的重复回车）
+    if ((event->key() == Qt::Key_Return || event->key() == Qt::Key_Enter)
+        && m_teeClicked && !event->isAutoRepeat()) {
+        // 关闭后 100ms 冷却：抑制发送/关闭的回车残留或快速二次按键立即重开
+        // 输入框（表现为“自动打开下一个/空输入框关不掉”）。手动再按回车
+        // （间隔 >100ms）正常唤起。
+        if (QDateTime::currentMSecsSinceEpoch() - m_chatCloseMs < 100) {
+            event->accept();
+            return;
+        }
+        openChatInput();
+        event->accept();
+        return;
+    }
     if (event->key() == Qt::Key_Escape) {
         // Esc 关闭圆盘（全屏/非全屏通用，触发收回动画）
         if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
@@ -753,6 +834,11 @@ void Floatee::changeEvent(QEvent *event)
         if (active != m_wasActive) {
             m_wasActive = active;
             refreshTranslucentDisplay();
+            // 输入框打开期间窗口重新激活时，确保系统输入法仍被唤起
+            if (active && m_chatInput) {
+                if (QInputMethod *im = QGuiApplication::inputMethod())
+                    im->show();
+            }
         }
     }
     QMainWindow::changeEvent(event);
@@ -827,6 +913,11 @@ void Floatee::paintEvent(QPaintEvent *event)
         if (ok)
             p.drawPixmap(0, 0, frame);
     }
+    // M6：消息区域（输入框 + 纵向消息列表，位于 Tee 上方）
+    if (m_chatInput || !m_chatBubbles.isEmpty())
+        paintChatAreaFor(p, QString(),
+                         m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts),
+                         ts / 64.0f);
     // M4：表情圆盘 overlay（非全屏也支持，右键本地 Tee 打开）
     if (m_emoticonWheel && m_emoticonWheel->isOpen())
         m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
@@ -1184,6 +1275,11 @@ void Floatee::onEmoticonReceivedMp(const QString &roleId, int index)
 
 void Floatee::onChatReceivedMp(const QString &roleId, const QString &text)
 {
+    addChatMessage(roleId, text);
+}
+
+void Floatee::addChatMessage(const QString &roleId, const QString &text)
+{
     if (text.trimmed().isEmpty())
         return;
     ChatBubble b;
@@ -1193,73 +1289,322 @@ void Floatee::onChatReceivedMp(const QString &roleId, const QString &text)
     m_chatBubbles.append(b);
     if (m_chatBubbles.size() > 8)
         m_chatBubbles.removeFirst();
+    updateChatWindowExtend();
     update();
 }
 
-void Floatee::sendChatMessage()
+void Floatee::openChatInput()
 {
-    if (!m_multi || !m_multi->inRoom()) {
-        QMessageBox::information(this, QStringLiteral("Chat"),
-                                 QStringLiteral("请先加入房间再发送消息"));
+    if (m_chatInput)
+        return;
+    m_chatInput = true;
+    m_chatInputText.clear();
+    m_chatPreedit.clear();
+    m_chatCursor = 0;
+    m_chatCursorVisible = true;
+    m_chatLastInputMs = QDateTime::currentMSecsSinceEpoch();
+    updateChatWindowExtend();
+    update();
+    // 聚焦窗口并把键盘焦点交给 IME 代理（QLineEdit），确保系统输入法可唤起。
+    // activateWindow 在 Windows 上是异步的，等事件循环处理完再 setFocus + show。
+    if (m_imeEdit)
+        m_imeEdit->clear();
+    activateWindow();
+    raise();
+    QTimer::singleShot(0, this, [this]() {
+        if (!m_chatInput)
+            return;
+        if (m_imeEdit) {
+            m_imeEdit->setFocus(Qt::OtherFocusReason);
+            m_imeEdit->setCursorPosition(m_imeEdit->text().size());
+        } else {
+            setFocus(Qt::OtherFocusReason);
+        }
+        if (QInputMethod *im = QGuiApplication::inputMethod())
+            im->show();
+    });
+}
+
+void Floatee::closeChatInput()
+{
+    if (!m_chatInput)
+        return;
+    m_chatInput = false;
+    m_chatInputText.clear();
+    m_chatPreedit.clear();
+    m_chatCursor = 0;
+    m_chatCloseMs = QDateTime::currentMSecsSinceEpoch();   // 防自动重开：短暂抑制回车唤起
+    // 注意：不清除 m_teeClicked —— 点击过 Tee 后，任何关闭方式（空白回车/发送/Esc/超时）
+    // 之后都能再按回车重新唤起输入框。防抖由 keyPressEvent 忽略 isAutoRepeat 的回车负责。
+    // 收回输入法焦点（清空/取消聚焦 IME 代理，避免残留候选框）
+    if (m_imeEdit) {
+        m_imeEdit->clear();
+        m_imeEdit->clearFocus();
+        setFocus(Qt::OtherFocusReason);
+    }
+    updateChatWindowExtend();
+    update();
+}
+
+void Floatee::submitChatInput()
+{
+    if (!m_chatInput)
+        return;
+    const QString text = m_imeEdit ? m_imeEdit->text().trimmed() : m_chatInputText.trimmed();
+    if (text.isEmpty()) {
+        // 空内容 → 只关闭输入框
+        closeChatInput();
         return;
     }
-    bool ok = false;
-    const QString text = QInputDialog::getText(this, QStringLiteral("Send Message"),
-        QStringLiteral("消息："), QLineEdit::Normal, QString(), &ok);
-    if (!ok || text.trimmed().isEmpty())
+    // 联机时广播给同房间；未联机仅本地显示（自娱自乐）
+    if (m_multi && m_multi->inRoom())
+        m_multi->sendChat(text);
+    addChatMessage(QString(), text);
+    closeChatInput();
+}
+
+QPointF Floatee::localTeeCenterGlobal() const
+{
+    const int cs = ExecTeeDrawer.canvasSize();
+    const float ts = ExecTeeDrawer.teeSize();
+    return m_fullscreenCanvas
+        ? m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts)
+        : QPointF(pos()) + m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+}
+
+QRectF Floatee::chatInputScreenRect() const
+{
+    if (!m_chatInput)
+        return QRectF();
+    const QPointF anchor = localTeeCenterGlobal();
+    const float scale = ExecTeeDrawer.teeSize() / 64.0f;
+    QFont f = font();
+    f.setPixelSize(qRound(14.0 * scale));
+    QFontMetrics fm(f);
+    const int maxW = qRound(250.0 * scale);
+    const int padX = qRound(8.0 * scale), padY = qRound(5.0 * scale);
+    const QString disp = m_chatInputText + m_chatPreedit + QLatin1Char(' ');
+    const QRect tr = fm.boundingRect(QRect(0, 0, maxW, 1000), Qt::TextWordWrap, disp);
+    const double w = tr.width() + padX * 2.0;
+    const double h = tr.height() + padY * 2.0;
+    const double bottomY = anchor.y() - qRound(46.0 * scale);   // 与绘制一致（上移避开 Tee 身体）
+    return QRectF(anchor.x() - w / 2.0, bottomY - h, w, h);
+}
+
+void Floatee::updateChatWindowExtend()
+{
+    if (m_fullscreenCanvas)
         return;
-    onChatReceivedMp(QString(), text);   // 本地也显示气泡（roleId 空 = 本地）
-    m_multi->sendChat(text);
+    const bool need = m_chatInput || !m_chatBubbles.isEmpty();
+    const int wantH = need ? 210 : 0;   // 消息区高度（非全屏固定值）
+    if (wantH == m_chatAreaH)
+        return;
+    const int delta = wantH - m_chatAreaH;
+    m_chatAreaH = wantH;
+    // 窗口向上扩展/收缩：Tee 在窗口内同步下移/上移，保持屏幕位置不变
+    move(pos().x(), pos().y() - delta);
+    resize(kWinW, kWinH + m_chatAreaH);
+    m_teePos.setY(kEmoticonTop + m_chatAreaH);
+    update();
+}
+
+// 渲染一个 Tee 的消息区：输入框（仅本地）在底部，消息列表越早越靠上。
+// anchor = Tee 中心（全屏=屏幕坐标，非全屏=窗口坐标）。
+void Floatee::paintChatAreaFor(QPainter &p, const QString &roleId,
+                               const QPointF &anchor, float scale)
+{
+    // 收集该 Tee 的消息（倒序 = 新→旧）
+    QVector<int> idxs;
+    for (int i = m_chatBubbles.size() - 1; i >= 0; --i) {
+        if (m_chatBubbles[i].roleId == roleId)
+            idxs.append(i);
+    }
+    const bool hasInput = (roleId.isEmpty() && m_chatInput);
+    if (idxs.isEmpty() && !hasInput)
+        return;
+
+    // 计算与绘制必须用同一字体：先设置到 painter，框宽才能精确包裹显示文本
+    p.save();
+    QFont f = p.font();
+    f.setPixelSize(qRound(14.0 * scale));
+    p.setFont(f);
+    QFontMetrics fm(f);
+    const int maxW = qRound(250.0 * scale);
+    const int padX = qRound(8.0 * scale), padY = qRound(5.0 * scale);
+    const int gap = qRound(4.0 * scale);
+    const double bottomY = anchor.y() - qRound(46.0 * scale);   // 底部元素底部（上移避开 Tee 身体）
+
+    // 输入框（最底，紧贴 Tee 上方）
+    QSize inSize;
+    if (hasInput) {
+        const QString disp = m_chatInputText + m_chatPreedit + QLatin1Char(' ');
+        const QRect tr = fm.boundingRect(QRect(0, 0, maxW, 1000), Qt::TextWordWrap, disp);
+        inSize = QSize(tr.width() + padX * 2, tr.height() + padY * 2);
+    }
+    // 消息尺寸（0=最新）
+    QVector<QSize> sizes;
+    for (int i = 0; i < idxs.size(); ++i) {
+        const QRect tr = fm.boundingRect(QRect(0, 0, maxW, 1000),
+                                         Qt::TextWordWrap, m_chatBubbles[idxs[i]].text);
+        sizes.append(QSize(tr.width() + padX * 2, tr.height() + padY * 2));
+    }
+    // 布局：从底部向上排（输入框 → 最新消息 → ... → 最旧）
+    double y = bottomY;
+    QRectF inputRect;
+    if (!inSize.isEmpty()) {
+        inputRect = QRectF(anchor.x() - inSize.width() / 2.0,
+                           y - inSize.height(), inSize.width(), inSize.height());
+        y -= inSize.height() + gap;
+    }
+    QVector<QRectF> rects;
+    for (int i = 0; i < sizes.size(); ++i) {
+        rects.append(QRectF(anchor.x() - sizes[i].width() / 2.0,
+                            y - sizes[i].height(), sizes[i].width(), sizes[i].height()));
+        y -= sizes[i].height() + gap;
+    }
+
+    // 绘制消息框（深色圆角，最后 2s 淡出）
+    // rects 自底向上：0=最新（紧贴输入框/Tee 上方），与 idxs 一一对应
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    p.setPen(Qt::NoPen);
+    for (int i = 0; i < rects.size(); ++i) {
+        const auto &b = m_chatBubbles[idxs[i]];
+        const qint64 age = now - b.startMs;
+        int alpha = 210;
+        if (age > 8000)
+            alpha = qMax(0, qRound(210.0 * (10000.0 - age) / 2000.0));
+        p.setBrush(QColor(30, 30, 40, alpha));
+        p.drawRoundedRect(rects[i], 7.0 * scale, 7.0 * scale);
+        p.setPen(QColor(255, 255, 255, alpha));
+        p.drawText(rects[i].adjusted(padX, padY, -padX, -padY),
+                   Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter, b.text);
+        p.setPen(Qt::NoPen);
+    }
+    // 绘制输入框（空白消息框 + 文本 + 闪烁光标）
+    if (hasInput && !inputRect.isNull()) {
+        p.setBrush(QColor(30, 30, 40, 210));
+        p.drawRoundedRect(inputRect, 7.0 * scale, 7.0 * scale);
+        const QString disp = m_chatInputText + m_chatPreedit;
+        p.setPen(Qt::white);
+        p.drawText(inputRect.adjusted(padX, padY, -padX, -padY),
+                   Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter, disp);
+        if (m_chatCursorVisible) {
+            const int w = fm.horizontalAdvance(disp);
+            const int cx = qRound(inputRect.left() + padX + w) + 1;
+            const int cy = qRound(inputRect.center().y());
+            p.fillRect(QRect(cx, cy - qRound(8.0 * scale),
+                             qMax(1, qRound(1.5 * scale)), qRound(16.0 * scale)),
+                       QColor(255, 255, 255, 230));
+        }
+        // 记录输入框矩形（屏幕坐标），供 inputMethodQuery 定位 IME 候选框
+        m_chatInputRect = inputRect;
+        if (!m_fullscreenCanvas)
+            m_chatInputRect.translate(QPointF(pos()));
+        // 同步 IME 代理的位置到输入框（透明，仅承载输入法焦点与候选框定位）
+        if (m_imeEdit) {
+            const QPointF tl = m_fullscreenCanvas
+                ? inputRect.topLeft() - QPointF(pos())
+                : inputRect.topLeft();
+            const QRect g(tl.toPoint(), inputRect.size().toSize());
+            if (m_imeEdit->geometry() != g)
+                m_imeEdit->setGeometry(g);
+        }
+    }
+    p.restore();
 }
 
 void Floatee::paintChatBubbles(QPainter &p)
 {
-    if (m_chatBubbles.isEmpty())
-        return;
-    const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    for (int i = m_chatBubbles.size() - 1; i >= 0; --i) {
-        if (now - m_chatBubbles[i].startMs > 3000)   // 3s 消失
-            m_chatBubbles.removeAt(i);
+    // 全屏画布（painter 已平移到全局坐标）：为本地 + 每个远端 Tee 绘制各自消息区
+    {
+        const int cs = ExecTeeDrawer.canvasSize();
+        const float ts = ExecTeeDrawer.teeSize();
+        const QPointF anchor = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
+        paintChatAreaFor(p, QString(), anchor, ts / 64.0f);
     }
-    QFont f = p.font();
-    f.setPixelSize(14);
-    p.setFont(f);
-    for (const auto &b : m_chatBubbles) {
-        QPointF teeCenter;
-        float scale = 1.0f;
-        if (b.roleId.isEmpty()) {
-            const int cs = ExecTeeDrawer.canvasSize();
-            const float ts = ExecTeeDrawer.teeSize();
-            scale = ts / 64.0f;
-            teeCenter = m_localTeePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts);
-        } else {
-            const auto it = m_peersRender.constFind(b.roleId);
-            if (it == m_peersRender.constEnd() || !it->drawer || it->hidden)
-                continue;
-            const int pcs = it->drawer->canvasSize();
-            const float pts = it->drawer->teeSize();
-            scale = pts / 64.0f;
-            teeCenter = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
-        }
-        QFontMetrics fm(f);
-        const int maxW = 240;
-        const QRect textRect = fm.boundingRect(QRect(0, 0, maxW, 1000), Qt::TextWordWrap, b.text);
-        const int padX = 8, padY = 5;
-        const int bw = textRect.width() + padX * 2;
-        const int bh = textRect.height() + padY * 2;
-        // 气泡中心在 Tee 上方（比表情气泡略高，避免重叠）
-        const QPointF center(teeCenter.x(), teeCenter.y() - 80.0 * scale - bh / 2.0);
-        const QRect bubble(qRound(center.x() - bw / 2.0), qRound(center.y() - bh / 2.0), bw, bh);
-        const QRect clamped = bubble.intersected(rect());
-        if (clamped.isEmpty())
+    for (auto it = m_peersRender.constBegin(); it != m_peersRender.constEnd(); ++it) {
+        if (!it->drawer || it->hidden)
             continue;
-        p.setPen(Qt::NoPen);
-        p.setBrush(QColor(30, 30, 40, 210));
-        p.drawRoundedRect(clamped, 7, 7);
-        p.setPen(Qt::white);
-        p.drawText(clamped.adjusted(padX, padY, -padX, -padY),
-                   Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignVCenter, b.text);
+        const int pcs = it->drawer->canvasSize();
+        const float pts = it->drawer->teeSize();
+        const QPointF anchor = it->pos + QPointF(pcs / 2.0, pcs / 2.0 + 0.12 * pts);
+        paintChatAreaFor(p, it.key(), anchor, pts / 64.0f);
     }
+}
+
+bool Floatee::eventFilter(QObject *obj, QEvent *event)
+{
+    if (obj == m_imeEdit) {
+        if (event->type() == QEvent::InputMethod) {
+            // 捕获 IME 代理（QLineEdit）上的组合文本：Qt 6 的 QInputMethod 不提供
+            // preeditString()，改为在事件层面读取 QInputMethodEvent，实时同步到自绘输入框。
+            auto *ime = static_cast<QInputMethodEvent *>(event);
+            m_chatPreedit = ime->preeditString();
+            m_chatLastInputMs = QDateTime::currentMSecsSinceEpoch();   // 组合中也算输入活动
+            update();
+        } else if (event->type() == QEvent::Paint) {
+            // 完全阻止 QLineEdit 绘制：其内置文本光标（caret）/选中高亮/背景全部由
+            // 自绘输入框接管，否则会出现一个多余的小闪烁光标条。QLineEdit 仅承载
+            // 输入法焦点与候选框定位，无需任何可见绘制。
+            return true;
+        }
+    }
+    return QMainWindow::eventFilter(obj, event);   // 不拦截其余事件，QLineEdit 正常处理
+}
+
+void Floatee::inputMethodEvent(QInputMethodEvent *event)
+{
+    if (!m_chatInput) {
+        QMainWindow::inputMethodEvent(event);
+        return;
+    }
+    // IME：更新组合中文本（preedit）并提交确认文本（commit）
+    m_chatPreedit = event->preeditString();
+    const QString commit = event->commitString();
+    if (!commit.isEmpty()) {
+        m_chatInputText.insert(m_chatCursor, commit);
+        m_chatCursor += commit.size();
+    }
+    // 处理组合期间的退格/删除（replacementLength）
+    if (event->replacementLength() > 0) {
+        m_chatCursor = qMax(0, m_chatCursor - event->replacementLength());
+        m_chatInputText.remove(m_chatCursor, event->replacementLength());
+    }
+    // 光标属性（IME 请求把光标移到某个位置）
+    for (const QInputMethodEvent::Attribute &attr : event->attributes()) {
+        if (attr.type == QInputMethodEvent::Cursor) {
+            m_chatCursor = qBound(0, attr.start, m_chatInputText.size());
+            break;
+        }
+    }
+    update();
+    event->accept();
+}
+
+QVariant Floatee::inputMethodQuery(Qt::InputMethodQuery query) const
+{
+    switch (query) {
+    case Qt::ImEnabled:
+        return m_chatInput;
+    case Qt::ImFont: {
+        QFont f = font();
+        f.setPixelSize(14);
+        return f;
+    }
+    case Qt::ImCursorRectangle: {
+        // 返回输入框内光标位置（屏幕坐标），供输入法候选框定位
+        const QRectF ir = chatInputScreenRect();
+        if (ir.isNull())
+            return QRect();
+        QFont f = font();
+        f.setPixelSize(14);
+        const int w = QFontMetrics(f).horizontalAdvance(m_chatInputText + m_chatPreedit);
+        return QRect(qRound(ir.left() + 8 + w), qRound(ir.center().y()) - 8, 2, 16);
+    }
+    default:
+        break;
+    }
+    return QMainWindow::inputMethodQuery(query);
 }
 
 void Floatee::paintEmoticonsFullscreen(QPainter &p)
@@ -1930,7 +2275,8 @@ void Floatee::applyLiveConfig()
         EmoticonWin->setFeatherStrength(ExecTeeDrawer.featherStrength());
     SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
     ExecTeeDrawer.setRenderScale(SizeScale);
-    m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
+    // 非全屏消息区扩展时保留 m_chatAreaH 的垂直偏移
+    m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop + m_chatAreaH);
 
     ExecWindowSideHide.Enabled = Setup.value("Enable_WindowSideHide").toBool();
     ExecTeEyes.Enabled = Setup.value("Enable_TeEyes").toBool();
@@ -1991,13 +2337,14 @@ bool Floatee::applySizeScale(double scale, bool anchorAtCursor)
         const QPointF anchorRel = (mouse - (winPos + m_teePos)) / oldCs;
         QPointF newPos = (mouse - winPos) - anchorRel * newCs;
         newPos.setX(qBound(0.0, newPos.x(), double(kWinW - newCs)));
-        newPos.setY(qBound(double(kEmoticonTop), newPos.y(),
-                           double(kWinH - newCs)));
+        // 非全屏消息区扩展时，Tee 的窗口内下边界下移 m_chatAreaH
+        newPos.setY(qBound(double(kEmoticonTop + m_chatAreaH), newPos.y(),
+                           double(kWinH + m_chatAreaH - newCs)));
         m_teePos = newPos;
     } else {
         // Menu path: horizontally centred, vertically at the bottom below the
         // emoticon band.
-        m_teePos = QPointF((kWinW - newCs) / 2.0, kEmoticonTop);
+        m_teePos = QPointF((kWinW - newCs) / 2.0, kEmoticonTop + m_chatAreaH);
     }
 
     RenderedEye = -1;
