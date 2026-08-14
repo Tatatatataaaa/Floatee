@@ -203,13 +203,22 @@ void TeeDrawer::renderLayers(QPixmap &out, int flags, int eyeIdx, float dirX,
                          teer::vec2(dirX, dirY), pos, 1.0f);
 
     out = m_backend.target;
-    out = out.scaled(m_canvasSize, m_canvasSize,
-                     Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    // HiDPI：渲染像素 = 画布逻辑尺寸 × 设备像素比，使 1 渲染像素 = 1 屏幕物理像素，
+    // 避免在 125%/150%/200% 屏幕上被放大而模糊。drawPixmap 仍按逻辑尺寸绘制
+    // （位置坐标不变），由 pixmap 的 dpr 标记驱动显示。
+    const int pxSize = qMax(1, qRound(m_canvasSize * m_devicePixelRatio));
+    out = out.scaled(pxSize, pxSize, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
     // Feather the alpha edge so small sizes render with smooth, anti-aliased
     // outlines instead of hard ~0.5px jaggies (opaque interiors stay crisp).
     // Fast mode skips it (remote peers on weak devices).
-    if (m_featherStrength > 0 && !m_fastMode)
-        out = featherAlpha(out, m_featherStrength);
+    // 羽化半径随缩放自适应（逻辑半径 × dpr → 物理像素半径，视觉一致）。
+    if (m_featherStrength > 0 && !m_fastMode) {
+        const float scale = m_canvasSize / float(BASE_CANVAS_SIZE);
+        const int radiusLog = qMax(1, qRound(1.0f / scale));
+        const int radiusPx = qMax(1, qRound(radiusLog * m_devicePixelRatio));
+        out = featherAlpha(out, m_featherStrength, radiusPx);
+    }
+    out.setDevicePixelRatio(m_devicePixelRatio);
 
     // 身体层（含 outline/feet）渲染后缓存实际非透明像素包围盒，供画布内
     // 钳制用（按真实渲染像素而非正方形碰撞箱）。眼睛层在脸内，不改变整体
@@ -243,8 +252,10 @@ QRect TeeDrawer::computeOpaqueRect(const QPixmap &pm)
     return QRect(minX, minY, maxX - minX + 1, maxY - minY + 1);
 }
 
-QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
+QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength, int radius)
 {
+    if (radius < 1)
+        radius = 1;
     QPixmap cur = src;
     for (int pass = 0; pass < strength; ++pass) {
         // Non-premultiplied RGBA: we only ever touch the ALPHA channel and
@@ -266,12 +277,12 @@ QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
                 int as = 0, n = 0;
                 int ors = 0, ogs = 0, obs = 0, on = 0;   // opaque neighbours' colour
                 bool touchesOutside = false;
-                for (int dy = -1; dy <= 1; ++dy) {
+                for (int dy = -radius; dy <= radius; ++dy) {
                     const int ny = y + dy;
                     if (ny < 0 || ny >= h)
                         continue;
                     const uchar *line = bits + ny * stride;
-                    for (int dx = -1; dx <= 1; ++dx) {
+                    for (int dx = -radius; dx <= radius; ++dx) {
                         const int nx = x + dx;
                         if (nx < 0 || nx >= w)
                             continue;
@@ -285,9 +296,9 @@ QPixmap TeeDrawer::featherAlpha(const QPixmap &src, int strength)
                 }
                 if (n == 0)
                     continue;
-                // Feather ONLY the outer silhouette: pixels whose 3×3 touches a
-                // fully transparent pixel. Internal AA edges are surrounded by
-                // opaque pixels → skipped → they stay sharp.
+                // Feather ONLY the outer silhouette: pixels whose neighbourhood
+                // touches a fully transparent pixel. Internal AA edges are
+                // surrounded by opaque pixels → skipped → they stay sharp.
                 if (!touchesOutside)
                     continue;
                 const int ma = as / n;
@@ -353,6 +364,11 @@ void TeeDrawer::selectMip(int part, float renderSize)
     const uint32_t id = (part == PartBody) ? BODY_TEX_ID
                        : (part == PartFeet) ? FEET_TEX_ID : EYES_TEX_ID;
     m_backend.registerTexture(id, chain[best]);
+}
+
+void TeeDrawer::setDevicePixelRatio(float dpr)
+{
+    m_devicePixelRatio = qMax(1.0f, dpr);
 }
 
 void TeeDrawer::setRenderScale(float scale)

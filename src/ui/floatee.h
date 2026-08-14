@@ -318,6 +318,7 @@ protected slots:
                           const QPointF &anchor, float scale);
     void paintChatBubbles(QPainter &p);     // 全屏画布：分发到本地 + 每个远端 Tee
     void updateChatWindowExtend();          // 非全屏：有消息/输入框时向上扩展窗口
+    void applyTeeDpr();                     // 按当前屏幕 DPI 更新渲染像素比并重渲染（HiDPI）
     QPointF localTeeCenterGlobal() const;   // 本地 Tee 中心（全局屏幕坐标）
     QRectF chatInputScreenRect() const;     // 输入框矩形（屏幕坐标；未打开为空）
     // M4：全屏画布内渲染所有活跃表情（本地 + 每个远端 Tee）

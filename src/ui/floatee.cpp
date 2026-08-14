@@ -164,6 +164,9 @@ void Floatee::Initialize()
     // Apply saved zoom before the first render
     SizeScale = qBound(0.5, Setup.value("Size").toDouble(1.0), 2.0);
     ExecTeeDrawer.setRenderScale(SizeScale);
+    // HiDPI：首次渲染前就按屏幕 DPI 设置渲染像素比（1 渲染像素 = 1 物理像素）
+    if (QScreen *scr = screen())
+        ExecTeeDrawer.setDevicePixelRatio(scr->devicePixelRatio());
     ExecTeeDrawer.render(CurrentEye, 1.0f, 0.0f);
     LastDirX = 1.0f; LastDirY = 0.0f;
     RenderedEye = CurrentEye;
@@ -823,6 +826,9 @@ void Floatee::keyPressEvent(QKeyEvent *event)
 
 void Floatee::changeEvent(QEvent *event)
 {
+    // 窗口被拖到不同 DPI 的屏幕时，更新渲染像素比并重渲染（HiDPI 适配）
+    if (event->type() == QEvent::ScreenChangeInternal)
+        applyTeeDpr();
     // On Windows, translucent (WA_TranslucentBackground) frameless tool windows
     // can have their alpha compositing go stale — semi-transparent skin pixels
     // appear faded/washed out — after the window loses (or regains) focus.
@@ -930,7 +936,13 @@ QIcon Floatee::makeTrayIcon() const
     // 托盘图标总尺寸由系统固定，放大分辨率无用 → 关键是**裁剪掉透明边距**，
     // 让 Tee 实际像素占满整个图标。用 opaqueRect（非透明像素包围盒）裁出
     // Tee 本体，再提供多尺寸让系统按 DPI 选择。
-    const QPixmap &src = ExecTeeDrawer.Tee;
+    // opaqueRect 是物理像素（相对 canvas），而带 dpr 的 QPixmap 坐标是逻辑的。
+    // 把 Tee 的 dpr 标记临时置 1，让逻辑=物理，裁剪坐标才统一（HiDPI 下不会
+    // 裁错导致 Tee 变小/偏移左上）。
+    QPixmap src = ExecTeeDrawer.Tee;   // 值复制（隐式共享），setDevicePixelRatio 会 detach
+    if (src.isNull())
+        return QIcon();
+    src.setDevicePixelRatio(1.0f);
     QPixmap cropped = src;
     const QRect box = ExecTeeDrawer.opaqueRect();
     if (!box.isNull() && !box.isEmpty()) {
@@ -938,10 +950,23 @@ QIcon Floatee::makeTrayIcon() const
         if (!clamp.isEmpty())
             cropped = src.copy(clamp);
     }
+    // 保持原始宽高比：Tee 本体是竖长方形，直接忽略比例缩放到正方形会被压扁。
+    // 以长边为边长、短边居中拓展出正方形（透明背景），再等比例缩放到图标尺寸。
+    const int side = qMax(cropped.width(), cropped.height());
+    if (side > 0 && cropped.width() != cropped.height()) {
+        QPixmap sq(side, side);
+        sq.fill(Qt::transparent);
+        QPainter p(&sq);
+        p.drawPixmap((side - cropped.width()) / 2, (side - cropped.height()) / 2, cropped);
+        p.end();
+        cropped = sq;
+    }
     QIcon icon;
     const QList<int> sizes = { 16, 20, 24, 32, 48, 64, 96, 128 };
     for (int s : sizes) {
-        icon.addPixmap(cropped.scaled(s, s, Qt::IgnoreAspectRatio, Qt::SmoothTransformation));
+        QPixmap px = cropped.scaled(s, s, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+        px.setDevicePixelRatio(1.0);   // 图标按逻辑尺寸固定，避免 Tee 的 dpr 使其偏小
+        icon.addPixmap(px);
     }
     return icon;
 }
@@ -1151,6 +1176,7 @@ void Floatee::enterFullscreenCanvas()
     dbgWin(QStringLiteral("[fullscreen] final scr=%1")
         .arg(rectStr(scr.x(), scr.y(), scr.width(), scr.height())));
     setGeometry(scr);
+    applyTeeDpr();   // HiDPI：按全屏所在屏幕更新渲染像素比
     // 必须在 setGeometry 之后才 clamp：clampTeePos 依赖 width()/height()，
     // 若在放大前调用会按初始化窗口 192×275 把 Tee 钳到左上角（m_localTeePos
     // 变成 (46,120)），Tee 显示错位且永远进不了屏幕中心。
@@ -1389,6 +1415,27 @@ QRectF Floatee::chatInputScreenRect() const
     const double h = tr.height() + padY * 2.0;
     const double bottomY = anchor.y() - qRound(46.0 * scale);   // 与绘制一致（上移避开 Tee 身体）
     return QRectF(anchor.x() - w / 2.0, bottomY - h, w, h);
+}
+
+void Floatee::applyTeeDpr()
+{
+    QScreen *scr = screen();
+    if (!scr)
+        scr = QGuiApplication::primaryScreen();
+    if (!scr)
+        return;
+    const float dpr = scr->devicePixelRatio();
+    if (qFuzzyCompare(ExecTeeDrawer.devicePixelRatio(), dpr))
+        return;
+    ExecTeeDrawer.setDevicePixelRatio(dpr);
+    // 强制按新像素比重渲染本地 Tee（眼睛/方向跟随下一帧生效）
+    RenderedEye = -1;
+    updateEyeFollow();
+    // peers 在同一屏幕，dpr 一致；仅更新其 drawer，渲染由其自身逻辑触发
+    for (auto &pr : m_peersRender) {
+        if (pr.drawer)
+            pr.drawer->setDevicePixelRatio(dpr);
+    }
 }
 
 void Floatee::updateChatWindowExtend()
@@ -1979,6 +2026,7 @@ void Floatee::onPeersChangedMp()
             if (info.hue != 0 || info.sat != 1.0 || info.light != 1.0)
                 pr.drawer->load(resolveSkinPath(info.skin), info.hue, info.sat, info.light);
             pr.drawer->setFastMode(true);   // 远端轻量渲染，避免弱设备事件循环饿死
+            pr.drawer->setDevicePixelRatio(ExecTeeDrawer.devicePixelRatio());  // HiDPI 一致
             pr.skin = info.skin;
             pr.eye = info.eye;
             pr.eyeScale = info.es;
@@ -2050,18 +2098,22 @@ QPointF Floatee::clampTeePos(QPointF pos, const QRect &opaqueBox) const
     // （QRect left/right 均含）。要求完全落在画布 [0, W-1]×[0, H-1] 内。
     // 全屏画布：pos 是全局（屏幕）坐标，钳制在「窗口全局位置 + 尺寸」范围内；
     // 非全屏：pos 是窗口内坐标，钳制在窗口矩形内。
+    // opaqueBox 是渲染像素坐标，而 pos/width/height 是逻辑坐标：按 dpr 换算成逻辑。
+    const double dpr = ExecTeeDrawer.devicePixelRatio();
+    const double l = opaqueBox.left() / dpr, t = opaqueBox.top() / dpr;
+    const double r = opaqueBox.right() / dpr, b = opaqueBox.bottom() / dpr;
     double minX, minY, maxX, maxY;
     if (m_fullscreenCanvas) {
         const double ox = this->pos().x(), oy = this->pos().y();
-        minX = ox - opaqueBox.left();
-        minY = oy - opaqueBox.top();
-        maxX = ox + double(width()) - 1 - opaqueBox.right();
-        maxY = oy + double(height()) - 1 - opaqueBox.bottom();
+        minX = ox - l;
+        minY = oy - t;
+        maxX = ox + double(width()) - 1 - r;
+        maxY = oy + double(height()) - 1 - b;
     } else {
-        minX = -opaqueBox.left();
-        minY = -opaqueBox.top();
-        maxX = double(width()) - 1 - opaqueBox.right();
-        maxY = double(height()) - 1 - opaqueBox.bottom();
+        minX = -l;
+        minY = -t;
+        maxX = double(width()) - 1 - r;
+        maxY = double(height()) - 1 - b;
     }
     pos.setX(qBound(minX, pos.x(), qMax(minX, maxX)));
     pos.setY(qBound(minY, pos.y(), qMax(minY, maxY)));
@@ -2078,8 +2130,11 @@ bool Floatee::hitTestTee(const QPoint &g, QString *outRoleId, int pad) const
         // 拦截而无法穿透到后面窗口）。pad 只做边缘微容差。
         const QRect opaque = ExecTeeDrawer.opaqueRect();
         if (!opaque.isNull() && !opaque.isEmpty()) {
-            if (QRectF(opaque).adjusted(-pad, -pad, pad, pad)
-                    .contains(gf - m_localTeePos)) {
+            // 像素包围盒 → 逻辑坐标（HiDPI 下 opaque 是物理像素）
+            const double dpr = ExecTeeDrawer.devicePixelRatio();
+            const QRectF o(opaque.x() / dpr, opaque.y() / dpr,
+                           opaque.width() / dpr, opaque.height() / dpr);
+            if (o.adjusted(-pad, -pad, pad, pad).contains(gf - m_localTeePos)) {
                 if (outRoleId) outRoleId->clear();   // 空 = 本地 Tee
                 return true;
             }
@@ -2103,9 +2158,15 @@ bool Floatee::hitTestTee(const QPoint &g, QString *outRoleId, int pad) const
                 if (outRoleId) *outRoleId = it.key();
                 return true;
             }
-        } else if (QRectF(opaque).adjusted(-pad, -pad, pad, pad).contains(gf - it->pos)) {
-            if (outRoleId) *outRoleId = it.key();
-            return true;
+        } else {
+            // 像素包围盒 → 逻辑坐标（HiDPI 下 opaque 是物理像素）
+            const double dpr = it->drawer->devicePixelRatio();
+            const QRectF o(opaque.x() / dpr, opaque.y() / dpr,
+                           opaque.width() / dpr, opaque.height() / dpr);
+            if (o.adjusted(-pad, -pad, pad, pad).contains(gf - it->pos)) {
+                if (outRoleId) *outRoleId = it.key();
+                return true;
+            }
         }
     }
     return false;
@@ -2360,6 +2421,8 @@ bool Floatee::applySizeScale(double scale, bool anchorAtCursor)
         for (QAction *a : SizeGroup->actions())
             a->setChecked(qFuzzyCompare(a->data().toDouble(), s));
     }
+
+    applyTeeDpr();   // HiDPI：缩放后同步渲染像素比（跨屏时 dpr 可能已变）
 
     Setup["Size"] = SizeScale;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));

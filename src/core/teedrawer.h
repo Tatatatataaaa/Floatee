@@ -46,6 +46,11 @@ public:
     // the mip-map level whose body region samples closest to 1:1 for the new
     // size and updates the render info; call before render() after a zoom.
     void setRenderScale(float scale);
+    // HiDPI：渲染出的 pixmap 携带此设备像素比，使 1 渲染像素 = 1 屏幕物理像素，
+    // 避免在 125%/150%/200% 缩放的屏幕上被放大而模糊。宿主在渲染前从窗口所在
+    // 屏幕设置（初始化 / 缩放 / 切换屏幕时）。
+    void setDevicePixelRatio(float dpr);
+    float devicePixelRatio() const { return m_devicePixelRatio; }
     int canvasSize() const { return m_canvasSize; }
     float teeSize() const { return m_teeSize; }
     // 非透明像素包围盒（相对 canvas 左上角）：Tee 身体真正占据的像素范围，
@@ -61,7 +66,11 @@ public:
     // Edge-only alpha feathering shared by the tee AND the over-head emoticon
     // bubbles (EmoticonWindow applies it to every rendered bubble frame), so
     // the single Feather tray menu drives both.
-    static QPixmap featherAlpha(const QPixmap &src, int strength);
+    // radius: feather neighbourhood radius in source pixels (1 = 3×3). The
+    // renderer scales it inversely with the tee zoom — small zoom levels get a
+    // proportionally wider alpha ramp so the outline stays equally smooth on
+    // screen at every size (1px on a 48px tee looks chunky; on 192px it's fine).
+    static QPixmap featherAlpha(const QPixmap &src, int strength, int radius = 1);
     // Fast mode (no SSAA / no feather): used for remote peers on weak devices,
     // where per-frame full-quality rendering can starve the event loop.
     void setFastMode(bool on) { m_fastMode = on; }
@@ -96,6 +105,7 @@ private:
 
     int m_canvasSize = BASE_CANVAS_SIZE;
     float m_teeSize = BASE_TEE_SIZE;
+    float m_devicePixelRatio = 1.0f;   // 渲染像素 → 屏幕物理像素 的映射（HiDPI）
     int m_featherStrength = 1;
     bool m_fastMode = false;
 
