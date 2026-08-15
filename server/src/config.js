@@ -17,6 +17,7 @@ export const DEFAULTS = {
   room: {
     capacity: 8,
     maxRooms: 100,
+    maxPublicRooms: 8,       // 公共房间上限（0 = 不限制）
     roomIdLength: 6,
     joinCodeLength: 4,
     emptyTtlMs: 300000,     // 空房 5 分钟销毁

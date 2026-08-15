@@ -66,10 +66,12 @@ export function validate(msg, cfg) {
       if (msg.roomName !== undefined && !isStr(msg.roomName, cfg.security.maxNameLen)) return fail('bad_field', 'roomName 非法');
       if (msg.capacity !== undefined && (!Number.isInteger(msg.capacity) || msg.capacity < 2 || msg.capacity > 32)) return fail('bad_field', 'capacity 非法');
       if (msg.public !== undefined && typeof msg.public !== 'boolean') return fail('bad_field', 'public 非法');
+      if (msg.password !== undefined && !isStr(msg.password, 32)) return fail('bad_field', 'password 非法');
       return ok();
     case MSG.JOIN_ROOM:
       if (!isStr(msg.roomId, 32)) return fail('bad_field', 'roomId 非法');
       if (msg.joinCode !== undefined && !isStr(msg.joinCode, cfg.room.joinCodeLength + 8)) return fail('bad_field', 'joinCode 非法');
+      if (msg.password !== undefined && !isStr(msg.password, 32)) return fail('bad_field', 'password 非法');
       return ok();
     case MSG.LEAVE_ROOM:
     case MSG.LIST_ROOMS:

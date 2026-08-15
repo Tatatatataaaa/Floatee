@@ -20,6 +20,9 @@
 #include <QInputDialog>
 #include <QLineEdit>
 #include <QInputMethod>
+#include <QCheckBox>
+#include <QLabel>
+#include <QListWidget>
 #include <QProcess>
 #include <QFileInfo>
 #include <QMessageBox>
@@ -429,10 +432,14 @@ void Floatee::Initialize()
     connect(mpCreateAction, &QAction::triggered, this, &Floatee::mpCreateRoom);
     QAction *mpJoinAction = MpMenu->addAction("Join Room...");
     connect(mpJoinAction, &QAction::triggered, this, &Floatee::mpJoinRoom);
-    QAction *mpCodeAction = MpMenu->addAction("Show Join Code");
+    QAction *mpCodeAction = MpMenu->addAction("Show Password");
     connect(mpCodeAction, &QAction::triggered, this, &Floatee::mpShowJoinCode);
     QAction *mpListAction = MpMenu->addAction("Room List");
     connect(mpListAction, &QAction::triggered, this, &Floatee::mpRoomList);
+    QAction *mpLeaveAction = MpMenu->addAction("Leave Room");
+    connect(mpLeaveAction, &QAction::triggered, this, [this]() {
+        if (m_multi) m_multi->leaveRoom();
+    });
     MpMenu->addSeparator();
     MpStatusAction = MpMenu->addAction("Status: 离线");
     MpStatusAction->setEnabled(false);
@@ -475,16 +482,8 @@ void Floatee::Initialize()
         connect(m_multi, &Multiplayer::statusChanged, this, [this](const QString &s) {
             if (MpStatusAction) MpStatusAction->setText(s);
         });
-        connect(m_multi, &Multiplayer::roomListReceived, this, [this](const QList<QJsonObject> &rooms) {
-            QString text;
-            for (const QJsonObject &r : rooms)
-                text += QStringLiteral("%1  %2  (%3/%4)  %5\n")
-                            .arg(r.value("roomId").toString(), r.value("roomName").toString())
-                            .arg(r.value("members").toInt()).arg(r.value("capacity").toInt())
-                            .arg(r.value("public").toBool() ? QStringLiteral("公开") : QStringLiteral("凭证房"));
-            if (text.isEmpty()) text = QStringLiteral("（当前无可加入房间）");
-            QMessageBox::information(this, QStringLiteral("Room List"), text);
-        });
+        connect(m_multi, &Multiplayer::roomListReceived, this,
+                &Floatee::showRoomListDialog);
         // M2：进出房间切换全屏画布；Tee 表变化刷新渲染；M4 表情接收
         connect(m_multi, &Multiplayer::roomChanged, this, &Floatee::onRoomChangedMp);
         connect(m_multi, &Multiplayer::peersChanged, this, &Floatee::onPeersChangedMp);
@@ -1915,11 +1914,26 @@ void Floatee::tryAutoConnectLastServer()
 void Floatee::mpCreateRoom()
 {
     if (!m_multi) return;
-    bool ok = false;
-    const QString name = QInputDialog::getText(this, QStringLiteral("Create Room"),
-        QStringLiteral("房间名（可选，留空则用默认）:"), QLineEdit::Normal, QString(), &ok);
-    if (!ok) return;
-    m_multi->createRoom(name.trimmed());
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("Create Room"));
+    auto *form = new QVBoxLayout(&dlg);
+    auto *nameEdit = new QLineEdit(&dlg);
+    nameEdit->setPlaceholderText(QStringLiteral("房间名（可选）"));
+    auto *pubCheck = new QCheckBox(QStringLiteral("公共房间（出现在房间列表，可被直接加入）"), &dlg);
+    auto *pwdEdit = new QLineEdit(&dlg);
+    pwdEdit->setPlaceholderText(QStringLiteral("密码（可选，留空则无密码）"));
+    pwdEdit->setEchoMode(QLineEdit::Password);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    form->addWidget(nameEdit);
+    form->addWidget(pubCheck);
+    form->addWidget(pwdEdit);
+    form->addWidget(btns);
+    if (dlg.exec() != QDialog::Accepted)
+        return;
+    m_multi->createRoom(nameEdit->text().trimmed(), pubCheck->isChecked(),
+                        pwdEdit->text());
 }
 
 void Floatee::mpJoinRoom()
@@ -1931,10 +1945,10 @@ void Floatee::mpJoinRoom()
     if (!ok1 || rid.trimmed().isEmpty())
         return;
     bool ok2 = false;
-    const QString code = QInputDialog::getText(this, QStringLiteral("Join Room"),
-        QStringLiteral("邀请码（公开房可留空）:"), QLineEdit::Normal, QString(), &ok2);
+    const QString pw = QInputDialog::getText(this, QStringLiteral("Join Room"),
+        QStringLiteral("密码（可选，无密码可留空）:"), QLineEdit::Password, QString(), &ok2);
     if (!ok2) return;
-    m_multi->joinRoom(rid.trimmed(), code.trimmed());
+    m_multi->joinRoom(rid.trimmed(), pw);
 }
 
 void Floatee::mpShowJoinCode()
@@ -1944,16 +1958,65 @@ void Floatee::mpShowJoinCode()
                                  QStringLiteral("当前不在房间中"));
         return;
     }
+    const QString pw = m_multi->joinCode();
     QMessageBox::information(this, QStringLiteral("Multiplayer"),
-        QStringLiteral("房间号: %1\n邀请码: %2\n（把邀请码分享给朋友即可加入）")
+        QStringLiteral("房间号: %1\n密码: %2\n（把密码分享给朋友即可加入）")
             .arg(m_multi->roomId(),
-                 m_multi->joinCode().isEmpty() ? QStringLiteral("（非房主，无邀请码）")
-                                               : m_multi->joinCode()));
+                 pw.isEmpty() ? QStringLiteral("（无密码，凭房间号即可加入）") : pw));
 }
 
 void Floatee::mpRoomList()
 {
     if (m_multi) m_multi->listRooms();
+}
+
+void Floatee::showRoomListDialog(const QList<QJsonObject> &rooms)
+{
+    if (!m_multi) return;
+    QDialog dlg(this);
+    dlg.setWindowTitle(QStringLiteral("公共房间"));
+    auto *lay = new QVBoxLayout(&dlg);
+    auto *list = new QListWidget(&dlg);
+    for (const QJsonObject &r : rooms) {
+        const QString label = QStringLiteral("%1  %2  (%3/%4)  %5")
+            .arg(r.value("roomId").toString(), r.value("roomName").toString())
+            .arg(r.value("members").toInt()).arg(r.value("capacity").toInt())
+            .arg(r.value("hasPassword").toBool() ? QStringLiteral("🔒 需密码") : QStringLiteral("公开"));
+        auto *item = new QListWidgetItem(label, list);
+        item->setData(Qt::UserRole, r.value("roomId").toString());
+        item->setData(Qt::UserRole + 1, r.value("hasPassword").toBool());
+    }
+    if (rooms.isEmpty())
+        new QListWidgetItem(QStringLiteral("（当前没有公共房间）"), list);
+    lay->addWidget(new QLabel(QStringLiteral("双击公共房间加入；带 🔒 需输入密码"), &dlg));
+    lay->addWidget(list);
+    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
+    btns->button(QDialogButtonBox::Ok)->setText(QStringLiteral("刷新"));
+    btns->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("关闭"));
+    lay->addWidget(btns);
+
+    // 双击加入：有密码则提示输入，否则直接加入
+    connect(list, &QListWidget::itemDoubleClicked, &dlg, [this, &dlg, list](QListWidgetItem *item) {
+        const QString roomId = item->data(Qt::UserRole).toString();
+        const bool hasPwd = item->data(Qt::UserRole + 1).toBool();
+        dlg.done(QDialog::Accepted);
+        if (hasPwd) {
+            bool ok = false;
+            const QString pw = QInputDialog::getText(this, QStringLiteral("加入公共房间"),
+                QStringLiteral("该房间需要密码："), QLineEdit::Password, QString(), &ok);
+            if (!ok) return;
+            m_multi->joinRoom(roomId, pw);
+        } else {
+            m_multi->joinRoom(roomId);
+        }
+    });
+    // 刷新：关闭当前对话框并重新查询（回调会再次弹出）
+    connect(btns->button(QDialogButtonBox::Ok), &QPushButton::clicked, &dlg, [this, &dlg]() {
+        dlg.done(QDialog::Accepted);
+        m_multi->listRooms();
+    });
+    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    dlg.exec();
 }
 
 // ── M2：全屏画布 / Peer 渲染 / 交互 ────────────────────────────────

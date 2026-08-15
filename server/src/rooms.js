@@ -82,13 +82,33 @@ export class RoomManager {
     if (session.roomId) return err('already_in_room', '已在房间中，请先离开');
     if (this.store.rooms.size >= this.cfg.room.maxRooms) return err('room_full', '服务器房间数已达上限');
 
+    const isPublic = msg.public === true;
+    if (isPublic) {
+      // 公共房上限：超过 maxPublicRooms 拒绝
+      const maxPub = this.cfg.room.maxPublicRooms;
+      if (maxPub > 0) {
+        let pubCount = 0;
+        for (const r of this.store.rooms.values()) if (r.isPublic) pubCount++;
+        if (pubCount >= maxPub) return err('public_room_full', '公共房间数已达上限');
+      }
+    }
+
     let roomId;
     do { roomId = randString(this.cfg.room.roomIdLength, DIGITS); } while (this.store.rooms.has(roomId));
 
     const room = new Room(roomId, msg.roomName || `Room-${roomId}`, msg.capacity || this.cfg.room.capacity,
-      msg.public === true, session.clientId);
+      isPublic, session.clientId);
     room.ownerToken = randString(32);
-    room.joinCode = randString(this.cfg.room.joinCodeLength, CODE_ALPHABET);
+    // 密码/邀请码统一：指定了密码则「邀请码=密码」（旧客户端发 joinCode 同样兼容）；
+    // 私密房无密码则邀请码留空（凭房间号直入）；公共房无密码邀请码随机（不影响校验）
+    if (msg.password) {
+      room.password = String(msg.password);
+      room.joinCode = room.password;
+    } else if (!isPublic) {
+      room.joinCode = '';
+    } else {
+      room.joinCode = randString(this.cfg.room.joinCodeLength, CODE_ALPHABET);
+    }
     this.store.rooms.set(roomId, room);
 
     this.addMember(room, session, true);
@@ -105,7 +125,13 @@ export class RoomManager {
     const room = this.store.getRoom(msg.roomId);
     if (!room) return err('room_not_found', '房间不存在或已关闭');
     if (room.members.size >= room.capacity) return err('room_full', '房间已满');
-    if (!room.isPublic && room.joinCode !== msg.joinCode) return err('bad_join_code', '邀请码错误');
+    // 凭证统一：新客户端发 password，旧客户端发 joinCode（两者等价）；空 = 无密码
+    const cred = msg.joinCode || msg.password || '';
+    if (room.isPublic) {
+      if (room.password && room.password !== cred) return err('bad_password', '密码错误');
+    } else if (room.joinCode !== cred) {
+      return err('bad_join_code', '密码错误');
+    }
 
     this.addMember(room, session, false);
     session.roomId = room.roomId;
@@ -292,9 +318,10 @@ export class RoomManager {
   }
 
   listRooms(session) {
+    // 仅列出公共房间（私密/凭证房不公开）；不返回密码本体，只给 hasPassword 标记
     const rooms = [...this.store.rooms.values()]
-      .filter((r) => r.members.size > 0)   // 只列非空房
-      .map((r) => ({ roomId: r.roomId, roomName: r.roomName, members: r.members.size, capacity: r.capacity, public: r.isPublic }));
+      .filter((r) => r.isPublic && r.members.size > 0)   // 只列非空公共房
+      .map((r) => ({ roomId: r.roomId, roomName: r.roomName, members: r.members.size, capacity: r.capacity, public: true, hasPassword: !!r.password }));
     session.send({ type: MSG.ROOM_LIST, rooms });
     return { ok: true };
   }

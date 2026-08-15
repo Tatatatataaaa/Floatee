@@ -73,20 +73,25 @@ void Multiplayer::send(const QJsonObject &obj)
 
 // ── 房间操作 ─────────────────────────────────────────────────────────
 
-void Multiplayer::createRoom(const QString &roomName)
+void Multiplayer::createRoom(const QString &roomName, bool isPublic,
+                             const QString &password)
 {
     QJsonObject o{{QStringLiteral("type"), QStringLiteral("create_room")}};
     if (!roomName.isEmpty())
         o.insert(QStringLiteral("roomName"), roomName);
+    o.insert(QStringLiteral("public"), isPublic);
+    if (!password.isEmpty())
+        o.insert(QStringLiteral("password"), password);
     send(o);
 }
 
-void Multiplayer::joinRoom(const QString &roomId, const QString &joinCode)
+void Multiplayer::joinRoom(const QString &roomId, const QString &password)
 {
+    // 发送 password；服务端凭证统一（旧客户端发 joinCode 同样兼容）
     QJsonObject o{{QStringLiteral("type"), QStringLiteral("join_room")},
                   {QStringLiteral("roomId"), roomId}};
-    if (!joinCode.isEmpty())
-        o.insert(QStringLiteral("joinCode"), joinCode);
+    if (!password.isEmpty())
+        o.insert(QStringLiteral("password"), password);
     send(o);
 }
 
@@ -273,18 +278,18 @@ void Multiplayer::onMessage(const QJsonObject &msg)
     }
     if (type == QLatin1String("room_created")) {
         m_roomId = msg.value(QStringLiteral("roomId")).toString();
+        m_roomName = msg.value(QStringLiteral("roomName")).toString();
         m_joinCode = msg.value(QStringLiteral("joinCode")).toString();
         m_ownerToken = msg.value(QStringLiteral("ownerToken")).toString();
-        emit notify(QStringLiteral("Multiplayer"),
-                    QStringLiteral("房间已创建\n房间号: %1\n邀请码: %2\n（把邀请码分享给朋友即可加入）")
-                        .arg(m_roomId, m_joinCode),
-                    false);
+        // 创建后不再弹「房间号+邀请码」：密码由创建者自己设定，房间号/密码
+        // 需要分享时用托盘菜单 "Show Password" 查看即可。
         emit roomChanged();
         updateStatus();
         return;
     }
     if (type == QLatin1String("room_joined")) {
         m_roomId = msg.value(QStringLiteral("roomId")).toString();
+        m_roomName = msg.value(QStringLiteral("roomName")).toString();
         // 现有成员角色进入 peer 表（不含自己，服务器 room_joined 的 members 含自己但可过滤）
         m_peers.clear();
         const QJsonArray members = msg.value(QStringLiteral("members")).toArray();
@@ -293,7 +298,8 @@ void Multiplayer::onMessage(const QJsonObject &msg)
             if (m.value(QStringLiteral("clientId")).toString() != m_clientId)
                 upsertPeer(m);
         }
-        emit notify(QStringLiteral("Multiplayer"), QStringLiteral("已加入房间 %1").arg(m_roomId), false);
+        emit notify(QStringLiteral("Multiplayer"),
+                    QStringLiteral("已加入房间 %1").arg(m_roomName.isEmpty() ? m_roomId : m_roomName), false);
         emit roomChanged();
         emit peersChanged();
         updateStatus();
@@ -403,6 +409,7 @@ void Multiplayer::onMessage(const QJsonObject &msg)
 void Multiplayer::clearRoom()
 {
     m_roomId.clear();
+    m_roomName.clear();
     m_joinCode.clear();
     m_ownerToken.clear();
     m_peers.clear();
@@ -416,7 +423,9 @@ void Multiplayer::updateStatus()
         text = QStringLiteral("Status: 离线");
     else if (!inRoom())
         text = QStringLiteral("Status: 已连接 (%1)").arg(serverAddress());
-    else
-        text = QStringLiteral("Status: 房间 %1 (%2)").arg(m_roomId).arg(memberCount());
+    else {
+        const QString name = m_roomName.isEmpty() ? m_roomId : m_roomName;   // 展示房间名（空则回退房间号）
+        text = QStringLiteral("Status: 房间 %1 (%2)").arg(name).arg(memberCount());
+    }
     emit statusChanged(text);
 }

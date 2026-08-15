@@ -60,6 +60,7 @@ export class Room {
     this.ownerClientId = ownerClientId;
     this.ownerToken = '';          // 房主管理令牌（create 时生成）
     this.joinCode = '';            // 唯一邀请码
+    this.password = '';            // 公共房可选密码（私密房忽略；不随列表返回）
     this.members = new Map();      // clientId -> Member
     this.emptySince = null;        // 空房 TTL 起点
   }

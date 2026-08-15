@@ -39,8 +39,9 @@ public:
     QString serverAddress() const;
 
     // 房间
-    void createRoom(const QString &roomName = QString());
-    void joinRoom(const QString &roomId, const QString &joinCode);
+    void createRoom(const QString &roomName = QString(), bool isPublic = false,
+                    const QString &password = QString());
+    void joinRoom(const QString &roomId, const QString &password = QString());
     void leaveRoom();
     void listRooms();
 
@@ -57,6 +58,7 @@ public:
     // 状态
     bool inRoom() const { return !m_roomId.isEmpty(); }
     QString roomId() const { return m_roomId; }
+    QString roomName() const { return m_roomName; }
     QString joinCode() const { return m_joinCode; }
     QString ownerToken() const { return m_ownerToken; }
     int memberCount() const { return m_peers.size(); }
@@ -107,6 +109,7 @@ private:
     QString m_deviceId;
 
     QString m_roomId;
+    QString m_roomName;      // 房间名（用户视角标识，状态栏展示）
     QString m_joinCode;
     QString m_ownerToken;
     QHash<QString, PeerInfo> m_peers;   // roleId -> PeerInfo（远端角色）

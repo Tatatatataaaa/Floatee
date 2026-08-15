@@ -243,6 +243,8 @@ protected slots:
     void mpJoinRoom();
     void mpShowJoinCode();
     void mpRoomList();
+    // 公共房间列表对话框（双击加入；需密码房会提示输入密码）
+    void showRoomListDialog(const QList<QJsonObject> &rooms);
     // 启动时自动连接上次使用的服务器（default.json multiplayer.server）
     void tryAutoConnectLastServer();
 
