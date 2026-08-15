@@ -29,7 +29,7 @@
     "maxMessageSize": 8192
   },
   "admin": {
-    "adminKey": "Inter212215",
+    "adminKey": "",
     "allowRemote": false
   }
 }

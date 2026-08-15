@@ -19,6 +19,10 @@ npm test           # 单元测试（node:test）
 
 配置见 `config.json`（默认值在 `src/config.js`，可用环境变量覆盖：`PORT`/`TCP_PORT`/`ADMIN_PORT`/`ADMIN_KEY`）。
 
+> **安全**：`config.json` 含敏感信息（`adminKey` 等），**不入库**（已加入 `.gitignore`）。
+> 部署时复制 `config.example.json` 为 `config.json` 再按需修改；Admin 密钥建议通过
+> 环境变量 `ADMIN_KEY` 提供，避免写入文件。若密钥曾提交到公开仓库，请立即轮换。
+
 ## 传输
 
 | 端口 | 传输 | 协议 | 用途 |
@@ -34,7 +38,7 @@ npm test           # 单元测试（node:test）
 ```
 server/
   package.json
-  config.json
+  config.example.json   # 配置模板（复制为 config.json 使用；config.json 不入库）
   src/
     index.js     # 入口：装配 ws + tcp + http(admin)
     config.js    # 默认配置 + config.json + env

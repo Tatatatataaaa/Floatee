@@ -1,2 +1,4 @@
 node_modules/
 *.log
+# 运行时配置含敏感信息（adminKey 等），不入库；复制 config.example.json 生成
+config.json
