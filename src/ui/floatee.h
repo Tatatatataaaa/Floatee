@@ -3,6 +3,7 @@
 
 #include <QMainWindow>
 #include <QLabel>
+#include <QFile>
 #include <QMouseEvent>
 #include <QKeyEvent>
 #include <QWheelEvent>
@@ -181,6 +182,21 @@ public:
     int m_chatAreaH = 0;                    // 非全屏时窗口向上扩展的消息区高度（Tee 屏幕位置不变）
     QRectF m_chatInputRect;                 // 当前帧输入框矩形（屏幕坐标，供 inputMethodQuery）
     QLineEdit *m_imeEdit = nullptr;         // IME 代理：透明 QLineEdit，承载系统输入法焦点
+    // ── M7 休眠 + 使用时长提醒（借鉴 DDNet AFK 模型）──
+    bool m_sleeping = false;            // 是否休眠中（zzz + 闭眼 + 降频）
+    qint64 m_lastActivityMs = 0;        // 最后活动时间戳（鼠标/键盘/交互）
+    qint64 m_sleepStartMs = 0;          // 本次休眠开始时间（唤醒时判定长休眠清空计时）
+    qint64 m_zzzPhaseMs = 0;            // zzz 呼吸动画相位累加（毫秒）
+    QPoint m_lastCursorPos;             // 上次记录的光标位置（afkTimer 检测鼠标活动）
+    qint64 m_lastTickWallMs = 0;        // 上次 tick 的墙上时钟（检测系统睡眠/合盖跳变）
+    int m_usageSeconds = 0;             // 累计活跃使用秒数（仅非休眠时累加）
+    QTimer *m_afkTimer = nullptr;       // 每秒：休眠检测 + 使用计时
+    int m_sleepTimeoutSec = 60;         // 休眠阈值（秒，0=禁用）—— Setup "SleepTimeout"
+    int m_breakReminderMin = 20;        // 休息提醒间隔（分钟，0=禁用）—— Setup "BreakReminder"
+    int m_resetAfterSleepMin = 120;     // 单次休眠超此值 → 清空使用时长（新会话）—— "ResetAfterSleep"
+    // 运行时 log（配置目录/logs/floatee_runtime.log）：每分钟状态 + 每 10 分钟系统时间
+    QFile m_logFile;
+    int m_logTick = 0;
     EmoticonWheel *m_emoticonWheel = nullptr;   // M4：表情圆盘（全屏画布 overlay）
     bool m_fullscreenEntered = false;           // 首次 show 后进入全屏（防重复）
     bool m_autoConnecting = false;              // 启动自动连接中：结果弹窗 2s 自动关闭
@@ -245,6 +261,16 @@ protected slots:
     void mpRoomList();
     // 公共房间列表对话框（双击加入；需密码房会提示输入密码）
     void showRoomListDialog(const QList<QJsonObject> &rooms);
+    // ── M7 休眠 + 使用时长提醒 ──
+    void noteActivity();                // 任何用户活动：刷新计时 + 唤醒
+    void enterSleep();                  // 进入休眠（zzz/闭眼/降频/暂停随机表情）
+    void wakeUp();                      // 唤醒（恢复渲染；长休眠则清空使用计时）
+    void onAfkTick();                   // 每秒：休眠检测 + 活跃使用计时/提醒
+    void initRuntimeLog();              // 创建配置目录/logs 并打开运行时 log 文件
+    void writeRuntimeLog();             // 每 1 分钟写状态、每 10 分钟写系统时间
+    void showBreakReminder();           // 休息提醒气泡
+    // 渲染休眠 zzz 气泡到 painter（anchor 为 Tee 中心；全屏=屏幕坐标，非全屏=窗口坐标）
+    void paintAfkZzz(QPainter &p, const QPointF &teeCenter, float teeSize);
     // 启动时自动连接上次使用的服务器（default.json multiplayer.server）
     void tryAutoConnectLastServer();
 

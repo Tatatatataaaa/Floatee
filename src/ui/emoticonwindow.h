@@ -61,6 +61,11 @@ public:
     bool renderFrame(QPixmap &target, const QString &key, const QPointF &teePosInTarget);
     bool renderFrame(QPixmap &target, const QPointF &teePosInTarget);     // local
 
+    // 休眠 zzz：持续渲染（宿主在休眠期间每帧调用）。phase 为动画相位（秒），
+    // 驱动呼吸 alpha 与轻微上浮；返回 true 表示已渲染一帧。
+    bool renderAfkZzzFrame(QPixmap &target, const QPointF &teePosInTarget,
+                           float teeSize, float phase);
+
     // 表情气泡边缘羽化（与 Tee 共用同一 Feather 托盘菜单）：
     // 0=Off 1=Normal 2=Strong，渲染每帧气泡后应用 TeeDrawer::featherAlpha。
     void setFeatherStrength(int strength) { m_featherStrength = qBound(0, strength, 2); }

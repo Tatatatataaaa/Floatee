@@ -215,6 +215,8 @@ void Floatee::Initialize()
         "  background-color: rgba(248,248,252,245);"
         "}"
         "QLabel { color: #1a1a1a; background: transparent; }"
+        "QCheckBox { color: #1a1a1a; }"
+        "QCheckBox::indicator { width: 16px; height: 16px; }"
         "/* 输入框 */"
         "QLineEdit {"
         "  background: rgba(255,255,255,235);"
@@ -445,6 +447,47 @@ void Floatee::Initialize()
     MpStatusAction->setEnabled(false);
     TrayMenu->addMenu(MpMenu);
 
+    // M7：休眠 + 使用时长提醒 菜单
+    QMenu *sleepMenu = new FloateeMenu("Sleep & Break");
+    QAction *sleepGoAction = sleepMenu->addAction("Go to Sleep");
+    connect(sleepGoAction, &QAction::triggered, this, [this]() { enterSleep(); });
+    QAction *sleepWakeAction = sleepMenu->addAction("Wake Up");
+    connect(sleepWakeAction, &QAction::triggered, this, [this]() { noteActivity(); });
+    sleepMenu->addSeparator();
+    QAction *sleepTimeoutAction = sleepMenu->addAction("Sleep Timeout (s)...");
+    connect(sleepTimeoutAction, &QAction::triggered, this, [this]() {
+        bool ok = false;
+        const int v = QInputDialog::getInt(this, QStringLiteral("Sleep Timeout"),
+            QStringLiteral("无操作多少秒后休眠（0=禁用）："), m_sleepTimeoutSec, 0, 86400, 5, &ok);
+        if (!ok) return;
+        m_sleepTimeoutSec = v;
+        Setup["SleepTimeout"] = v;
+        JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+    });
+    QAction *remindAction = sleepMenu->addAction("Break Reminder (min)...");
+    connect(remindAction, &QAction::triggered, this, [this]() {
+        bool ok = false;
+        const int v = QInputDialog::getInt(this, QStringLiteral("Break Reminder"),
+            QStringLiteral("每多少分钟提醒休息（0=禁用）："), m_breakReminderMin, 0, 1440, 5, &ok);
+        if (!ok) return;
+        m_breakReminderMin = v;
+        m_usageSeconds = 0;   // 重置本轮计时
+        Setup["BreakReminder"] = v;
+        JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+    });
+    QAction *resetAction = sleepMenu->addAction("Reset After Sleep (min)...");
+    connect(resetAction, &QAction::triggered, this, [this]() {
+        bool ok = false;
+        const int v = QInputDialog::getInt(this, QStringLiteral("Reset After Sleep"),
+            QStringLiteral("单次休眠超过多少分钟视为新会话（清空使用计时）："),
+            m_resetAfterSleepMin, 0, 43200, 10, &ok);
+        if (!ok) return;
+        m_resetAfterSleepMin = v;
+        Setup["ResetAfterSleep"] = v;
+        JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
+    });
+    TrayMenu->addMenu(sleepMenu);
+
     // ── online 分支：联机控制器初始化（deviceId 首次生成并持久化）──
     {
         QString deviceId;
@@ -562,6 +605,19 @@ void Floatee::Initialize()
             update();
     });
     m_chatTimer->start();
+    // M7 休眠 + 使用时长提醒：配置 + 每秒 tick（借鉴 DDNet AFK 模型）
+    m_sleepTimeoutSec = qBound(0, Setup.value("SleepTimeout").toInt(60), 86400);
+    m_breakReminderMin = qBound(0, Setup.value("BreakReminder").toInt(20), 1440);
+    m_resetAfterSleepMin = qBound(0, Setup.value("ResetAfterSleep").toInt(120), 43200);
+    m_lastActivityMs = QDateTime::currentMSecsSinceEpoch();
+    m_lastCursorPos = QCursor::pos();
+    m_lastTickWallMs = QDateTime::currentMSecsSinceEpoch();
+    m_afkTimer = new QTimer(this);
+    m_afkTimer->setInterval(1000);
+    connect(m_afkTimer, &QTimer::timeout, this, &Floatee::onAfkTick);
+    m_afkTimer->start();
+    // 运行时 log（验证使用时长表现）
+    initRuntimeLog();
     // M6 IME 代理：Qt 只在标准文本控件（QLineEdit 等）上可靠地启用系统输入法
     // （Windows TSF）。自绘 QMainWindow 即使 ImEnabled=true 也常唤不起输入法；
     // 改用完全透明、置于输入框位置的小 QLineEdit 承载输入法焦点，文本/组合/回车
@@ -606,12 +662,18 @@ Floatee::Floatee(QWidget *parent)
 
 Floatee::~Floatee()
 {
+    if (m_logFile.isOpen()) {
+        m_logFile.write(QStringLiteral("=== Floatee runtime log end ===\n").toUtf8());
+        m_logFile.flush();
+        m_logFile.close();
+    }
     delete ui;
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
 void Floatee::mousePressEvent(QMouseEvent *event)
 {
+    noteActivity();   // M7：点击算活动（休眠时唤醒）
     // M6 便捷入口：记录点击命中本地 Tee（随后按回车即唤起输入框）。
     // 全屏：用 hitTestTee（屏幕坐标）；非全屏：窗口即 Tee，点击窗口即命中。
     if (m_fullscreenCanvas) {
@@ -684,6 +746,8 @@ void Floatee::mousePressEvent(QMouseEvent *event)
 
 void Floatee::mouseMoveEvent(QMouseEvent *event)
 {
+    noteActivity();   // M7：鼠标移动算活动
+    m_lastCursorPos = event->globalPosition().toPoint();
     // M2 全屏画布：拖拽 Tee（本地/远端）仅改变本地摆放
     if (m_fullscreenCanvas) {
         if (m_emoticonWheel && m_emoticonWheel->isOpen()) {
@@ -733,6 +797,7 @@ void Floatee::mouseMoveEvent(QMouseEvent *event)
 
 void Floatee::mouseReleaseEvent(QMouseEvent *event)
 {
+    noteActivity();   // M7：松开鼠标算活动
     if (m_fullscreenCanvas) {
         if (m_emoticonWheel && m_emoticonWheel->isOpen() && event->button() == Qt::LeftButton) {
             // 全屏圆盘中心是全局坐标，提交也必须用全局坐标（用窗口内坐标会
@@ -773,6 +838,7 @@ void Floatee::mouseReleaseEvent(QMouseEvent *event)
 
 void Floatee::keyPressEvent(QKeyEvent *event)
 {
+    noteActivity();   // M7：按键算活动（输入中同样算）
     // ── M6 输入框打开：所有按键进入输入逻辑 ──
     if (m_chatInput) {
         // 文本输入由 IME 代理 QLineEdit 处理（含系统输入法）；这里只兜底：
@@ -891,6 +957,12 @@ void Floatee::paintEvent(QPaintEvent *event)
             paintEmoticonsFullscreen(p);
         // 聊天：本地 + 远端 Tee 文本气泡
         paintChatBubbles(p);
+        // M7：本地 Tee 休眠 zzz（全局坐标）
+        if (m_sleeping && EmoticonWin) {
+            const int zcs = ExecTeeDrawer.canvasSize();
+            const float zts = ExecTeeDrawer.teeSize();
+            paintAfkZzz(p, m_localTeePos + QPointF(zcs / 2.0, zcs / 2.0), zts);
+        }
         // M4：表情圆盘 overlay
         if (m_emoticonWheel && m_emoticonWheel->isOpen())
             m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
@@ -926,6 +998,9 @@ void Floatee::paintEvent(QPaintEvent *event)
         paintChatAreaFor(p, QString(),
                          m_teePos + QPointF(cs / 2.0, cs / 2.0 + 0.12 * ts),
                          ts / 64.0f);
+    // M7：休眠 zzz（Tee 右上）
+    if (m_sleeping && EmoticonWin)
+        paintAfkZzz(p, m_teePos + QPointF(cs / 2.0, cs / 2.0), ts);
     // M4：表情圆盘 overlay（非全屏也支持，右键本地 Tee 打开）
     if (m_emoticonWheel && m_emoticonWheel->isOpen())
         m_emoticonWheel->paint(p, EmoticonWin ? EmoticonWin->atlas() : QPixmap(),
@@ -1015,10 +1090,10 @@ void Floatee::updateEyeFollow()
             eyeScale = kMaxTravel;
     }
 
-    int eye = CurrentEye;
+    int eye = m_sleeping ? 5 : CurrentEye;   // M7 休眠：强制 EMOTE_BLINK 压扁闭眼
     // Classic Floatee behaviour: when the cursor hovers near the top of the tee
     // and the default eyes are active, switch to a happy face.
-    const bool petting = (eye == 0 && len < 45.0f * SizeScale && d.y() < 0.0f);
+    const bool petting = !m_sleeping && (eye == 0 && len < 45.0f * SizeScale && d.y() < 0.0f);
     if (petting) {
         eye = 1;
         // Edge-trigger the hearts emoticon once when the cursor starts petting.
@@ -1721,6 +1796,8 @@ void Floatee::showPeerContextMenu(const QString &roleId, const QPoint &g)
 
 void Floatee::onRandomEmoticonTick()
 {
+    if (m_sleeping)   // M7：休眠中不随机冒表情
+        return;
     // Every 10s, with ~50% probability, show a random emoticon.
     if (QRandomGenerator::global()->bounded(100) < 50)
         triggerRandomEmoticon();
@@ -2017,6 +2094,149 @@ void Floatee::showRoomListDialog(const QList<QJsonObject> &rooms)
     });
     connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
     dlg.exec();
+}
+
+// ── M7：休眠 + 使用时长提醒（借鉴 DDNet AFK 模型）──────────────────
+
+void Floatee::noteActivity()
+{
+    m_lastActivityMs = QDateTime::currentMSecsSinceEpoch();
+    if (m_sleeping)
+        wakeUp();
+}
+
+void Floatee::enterSleep()
+{
+    if (m_sleeping)
+        return;
+    m_sleeping = true;
+    m_sleepStartMs = QDateTime::currentMSecsSinceEpoch();
+    m_zzzPhaseMs = 0;
+    // 省电：休眠中无需高频重绘，跟眼降到 2s
+    if (EyeFollowTimer)
+        EyeFollowTimer->setInterval(2000);
+    RenderedEye = -1;
+    updateEyeFollow();   // 闭眼（EMOTE_BLINK）渲染
+    update();
+}
+
+void Floatee::wakeUp()
+{
+    if (!m_sleeping)
+        return;
+    m_sleeping = false;
+    // 长休眠 = 新会话：清空累计使用时长，重新计时（夜间睡眠自然重置）
+    if (m_resetAfterSleepMin > 0) {
+        const qint64 dur = QDateTime::currentMSecsSinceEpoch() - m_sleepStartMs;
+        if (dur >= qint64(m_resetAfterSleepMin) * 60 * 1000)
+            m_usageSeconds = 0;
+    }
+    // 恢复跟眼频率（全屏 33ms / 非全屏 16ms）
+    if (EyeFollowTimer)
+        EyeFollowTimer->setInterval(m_fullscreenCanvas ? 33 : 16);
+    RenderedEye = -1;
+    updateEyeFollow();
+    update();
+}
+
+void Floatee::onAfkTick()
+{
+    writeRuntimeLog();   // 每分钟状态 / 每 10 分钟系统时间
+
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 dt = now - m_lastTickWallMs;
+    m_lastTickWallMs = now;
+    // 系统睡眠/合盖：tick 间隔异常大（正常 1s）。唤醒后系统时间已校正回真实时间，
+    // dt 包含睡眠时长 —— 达到阈值视为「新会话」，清空累计使用时长重新计时。
+    // 也覆盖 debugger 长时间挂起等场景。
+    if (m_resetAfterSleepMin > 0 && dt >= qint64(m_resetAfterSleepMin) * 60 * 1000)
+        m_usageSeconds = 0;
+
+    // 光标位置变化也算活动（全屏穿透窗口收不到 mouseMoveEvent）
+    const QPoint cp = QCursor::pos();
+    if (cp != m_lastCursorPos) {
+        m_lastCursorPos = cp;
+        noteActivity();
+    }
+    if (m_sleeping) {
+        m_zzzPhaseMs += 1000;   // zzz 呼吸动画相位（驱动 update 重绘）
+        update();
+        return;
+    }
+    // 休眠检测：无活动超过阈值 → 休眠
+    if (m_sleepTimeoutSec > 0
+        && now - m_lastActivityMs >= qint64(m_sleepTimeoutSec) * 1000) {
+        enterSleep();
+        return;
+    }
+    // 使用时长统计（仅非休眠累加）+ 定期休息提醒
+    if (m_breakReminderMin > 0) {
+        m_usageSeconds++;
+        if (m_usageSeconds >= m_breakReminderMin * 60) {
+            m_usageSeconds = 0;
+            showBreakReminder();
+        }
+    }
+}
+
+void Floatee::initRuntimeLog()
+{
+    const QString dir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    const QString logDir = dir + QLatin1String("/logs");
+    QDir().mkpath(logDir);
+    m_logFile.setFileName(logDir + QLatin1String("/floatee_runtime.log"));
+    if (!m_logFile.open(QIODevice::WriteOnly | QIODevice::Append | QIODevice::Text))
+        qWarning() << "Floatee: cannot open runtime log" << m_logFile.fileName();
+    else {
+        m_logFile.write(QStringLiteral("=== Floatee runtime log start ===\n").toUtf8());
+        m_logFile.flush();   // 立即落盘，便于随时查看
+    }
+}
+
+void Floatee::writeRuntimeLog()
+{
+    if (!m_logFile.isOpen())
+        return;
+    ++m_logTick;
+    const QDateTime now = QDateTime::currentDateTime();
+    const bool doMinute = (m_logTick % 60 == 0);
+    if (doMinute) {
+        // 每 1 分钟：当前运行状态（是否休眠 + 已累计使用秒数）
+        m_logFile.write(QStringLiteral("[%1] sleeping=%2 usageSeconds=%3\n")
+            .arg(now.toString(QStringLiteral("HH:mm:ss")),
+                 m_sleeping ? QStringLiteral("yes") : QStringLiteral("no"))
+            .arg(m_usageSeconds).toUtf8());
+    }
+    if (m_logTick % 600 == 0) {
+        // 每 10 分钟：当前系统时间
+        m_logFile.write(QStringLiteral("[%1] system time: %2\n")
+            .arg(now.toString(QStringLiteral("HH:mm:ss")),
+                 now.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss"))).toUtf8());
+    }
+    if (doMinute)
+        m_logFile.flush();
+}
+
+void Floatee::showBreakReminder()
+{
+    addChatMessage(QString(),
+                   QStringLiteral("已使用 %1 分钟，起来休息一下吧 😴").arg(m_breakReminderMin));
+}
+
+void Floatee::paintAfkZzz(QPainter &p, const QPointF &teeCenter, float teeSize)
+{
+    const float scale = teeSize / 64.0f;
+    // zzz 位于 TeePos + (24,-40)*scale，加上 zzz 自身半高(~32*scale)与上浮动画
+    // (~5*scale)，顶部最大到 -77*scale → 缓冲半宽取 96*scale 防截断
+    const double half = 96.0 * scale;
+    const int box = qCeil(half * 2.0);
+    const qreal fdpr = ExecTeeDrawer.devicePixelRatio();
+    QPixmap frame(qRound(box * fdpr), qRound(box * fdpr));
+    frame.setDevicePixelRatio(fdpr);
+    // frame 内 TeePos = 缓冲中心；RenderAfkZzz 在 TeePos + (24,-40)*scale 画 zzz
+    if (EmoticonWin->renderAfkZzzFrame(frame, QPointF(half, half), teeSize,
+                                       m_zzzPhaseMs / 1000.0f))
+        p.drawPixmap(qRound(teeCenter.x() - half), qRound(teeCenter.y() - half), frame);
 }
 
 // ── M2：全屏画布 / Peer 渲染 / 交互 ────────────────────────────────
@@ -2516,6 +2736,7 @@ void Floatee::zoomSize(int step)
 
 void Floatee::wheelEvent(QWheelEvent *event)
 {
+    noteActivity();   // M7：滚轮算活动
     // M2 全屏画布：滚轮缩放光标悬停的 Tee，**以鼠标为锚点**（鼠标指向的 Tee 点保持不动）
     if (m_fullscreenCanvas) {
         const QPoint g = QCursor::pos();

@@ -124,3 +124,23 @@ bool EmoticonWindow::renderFrame(QPixmap &target, const QPointF &teePosInTarget)
 {
     return renderFrame(target, QString(), teePosInTarget);
 }
+
+bool EmoticonWindow::renderAfkZzzFrame(QPixmap &target, const QPointF &teePosInTarget,
+                                       float teeSize, float phase)
+{
+    target.fill(Qt::transparent);
+    m_backend.target = target;
+    m_renderer.SetTeeSize(teeSize);
+    // 呼吸 alpha + 轻微上浮（模拟睡着）：sin 驱动，周期约 2s
+    const float breath = 0.5f + 0.5f * std::sin(phase * 2.0f * 3.14159265f);
+    const float alpha = 0.72f + 0.28f * breath;
+    const float lift = breath * 5.0f * (teeSize / 64.0f);
+    m_renderer.RenderAfkZzz(teer::vec2(teePosInTarget.x(), teePosInTarget.y() - lift), alpha);
+    target = m_backend.target;
+    if (m_featherStrength > 0) {
+        const qreal dpr = target.devicePixelRatio();
+        target = TeeDrawer::featherAlpha(target, m_featherStrength);
+        target.setDevicePixelRatio(dpr);   // fromImage 会丢 dpr，恢复以保持物理像素
+    }
+    return true;
+}

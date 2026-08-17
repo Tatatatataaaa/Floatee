@@ -1,0 +1,31 @@
+# 统一行尾符为 LF（工作区），防止 Windows/跨设备编辑产生 CRLF 伪 diff
+# 所有文本文件：checkout 时保持 LF，提交时规范为 LF
+* text=auto eol=lf
+
+# 二进制文件明确标注，避免被 text 规则误处理
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.icns binary
+*.ico binary
+*.webp binary
+*.ttf binary
+*.otf binary
+
+# 特殊格式
+*.ui text eol=lf
+*.qrc text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
+*.md text eol=lf
+*.json text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.ts text eol=lf
+*.mm text eol=lf
+*.h text eol=lf
+*.cpp text eol=lf
+*.m text eol=lf
+*.py text eol=lf
+*.bat text eol=crlf
