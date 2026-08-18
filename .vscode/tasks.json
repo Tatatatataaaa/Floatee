@@ -1,0 +1,35 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Floatee Release build",
+      "type": "shell",
+      "command": "Get-Process Floatee -ErrorAction SilentlyContinue | Stop-Process -Force; Start-Sleep -Milliseconds 500; cmake --build \"${workspaceFolder}\\build_check\" --config Release --target Floatee",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$msCompile"],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Floatee run",
+      "type": "shell",
+      "command": "Start-Process \"${workspaceFolder}\\build_check\\Release\\Floatee.exe\"; Start-Sleep -Seconds 3; if (Get-Process Floatee -ErrorAction SilentlyContinue) { Write-Output \"running ok\" } else { Write-Output \"NOT RUNNING\"; exit 1 }",
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Floatee server test",
+      "type": "shell",
+      "command": "cd \"${workspaceFolder}\\server\"; npm test",
+      "group": { "kind": "test" },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Floatee server start",
+      "type": "shell",
+      "command": "node \"${workspaceFolder}\\server\\src\\index.js\"",
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}
