@@ -1,7 +1,6 @@
 #include "elwidgets.h"
 #include "theme.h"
 
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
@@ -158,26 +157,14 @@ ElDialog::ElDialog(const QString &title, QWidget *parent)
     m_content->setSpacing(8);
     root->addLayout(m_content);
 
-    // 阴影
-    auto *shadow = new QGraphicsDropShadowEffect(this);
-    shadow->setBlurRadius(28);
-    shadow->setOffset(0, 6);
-    shadow->setColor(Theme::shadowColor());
-    setGraphicsEffect(shadow);
+// 无阴影：ElCard 圆角描边已提供视觉层次；阴影在无边框窗口下跨平台不可控
 
-    connect(Theme::instance(), &Theme::themeChanged, this, &ElDialog::onThemeChanged);
+    connect(Theme::instance(), &Theme::themeChanged, this, [this]() { update(); });
 }
 
 void ElDialog::setContent(QWidget *w)
 {
     m_content->addWidget(w);
-}
-
-void ElDialog::onThemeChanged()
-{
-    if (auto *eff = qobject_cast<QGraphicsDropShadowEffect *>(graphicsEffect()))
-        eff->setColor(Theme::shadowColor());
-    update();
 }
 
 void ElDialog::paintEvent(QPaintEvent *event)

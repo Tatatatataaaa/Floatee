@@ -69,9 +69,6 @@ protected:
     void mouseReleaseEvent(QMouseEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
 
-private slots:
-    void onThemeChanged();
-
 private:
     QWidget *m_titleBar = nullptr;
     QLabel *m_titleLabel = nullptr;

@@ -9,7 +9,6 @@
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
-#include <QGraphicsDropShadowEffect>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QLabel>
@@ -48,14 +47,7 @@ SettingsWindow::SettingsWindow(Floatee *floatee)
     resize(720, 500);
     setWindowTitle(QStringLiteral("Floatee Settings"));
 
-    auto *shadow = new QGraphicsDropShadowEffect(this);
-    shadow->setBlurRadius(32);
-    shadow->setOffset(0, 8);
-    shadow->setColor(Theme::shadowColor());
-    setGraphicsEffect(shadow);
-
-    // 根布局：留出阴影边距
-    auto *root = new QVBoxLayout(this);
+auto *root = new QVBoxLayout(this);
     root->setContentsMargins(20, 16, 20, 20);
     root->setSpacing(0);
 
@@ -111,11 +103,7 @@ SettingsWindow::SettingsWindow(Floatee *floatee)
 
     connect(m_nav, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
 
-    connect(Theme::instance(), &Theme::themeChanged, this, [this]() {
-        if (auto *eff = qobject_cast<QGraphicsDropShadowEffect *>(graphicsEffect()))
-            eff->setColor(Theme::shadowColor());
-        update();
-    });
+    connect(Theme::instance(), &Theme::themeChanged, this, [this]() { update(); });
 }
 
 // ═══════════════════════ 页面构建 ═══════════════════════
