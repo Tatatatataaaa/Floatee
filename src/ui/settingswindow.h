@@ -69,6 +69,8 @@ private:
     QPushButton *m_connectBtn = nullptr;
     QPushButton *m_disconnectBtn = nullptr;
     QLabel *m_mpStatus = nullptr;
+    QLabel *m_roomInfoLabel = nullptr;   // 房间信息（房间名、房间号、密码）
+    QPushButton *m_roomListBtn = nullptr; // 查看房间列表
 
     // 休眠页（自由输入：QLineEdit + QIntValidator，避免 SpinBox 上下按钮样式异常）
     QLineEdit *m_sleepTimeoutEdit = nullptr;
