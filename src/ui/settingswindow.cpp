@@ -8,6 +8,26 @@
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
+#include <QAbstractItemView>
+#include <QFrame>
+
+// 修复 ComboBox popup 黑色直角边框（Windows 系统窗口阴影/边框线）
+static void patchComboPopup(QComboBox *combo) {
+    if (!combo) return;
+    QFrame *view = combo->view();
+    if (!view) return;
+    view->setFrameShape(QFrame::NoFrame);
+    // Windows 专属：popup 窗口右下方的黑色直角边框 = 系统窗口阴影/边框线
+    // WA_TranslucentBackground + FramelessWindowHint 去掉系统绘制的边框线
+#ifdef Q_OS_WIN
+    if (auto *popup = view->window()) {
+        popup->setWindowFlags(popup->windowFlags() | Qt::FramelessWindowHint);
+        popup->setAttribute(Qt::WA_TranslucentBackground);
+        popup->setAttribute(Qt::WA_NoSystemBackground);
+        popup->update();
+    }
+#endif
+}
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonDocument>
@@ -84,6 +104,8 @@ auto *root = new QVBoxLayout(this);
     m_nav = new QListWidget(this);
     m_nav->setFixedWidth(150);
     m_nav->setIconSize(QSize(20, 20));
+    m_nav->setSpacing(5);              // 项间距，防止 Windows 上重叠
+    m_nav->setFocusPolicy(Qt::NoFocus);   // 去掉选中项的焦点虚线框
     const QStringList navItems = {
         QStringLiteral("常规"), QStringLiteral("外观"), QStringLiteral("联机"),
         QStringLiteral("休眠"), QStringLiteral("实例"),
@@ -182,6 +204,7 @@ QWidget *SettingsWindow::buildGeneralPage()
     auto *themeRow = new QHBoxLayout;
     themeRow->addWidget(new QLabel(QStringLiteral("深浅模式："), page));
     m_themeCombo = new QComboBox(page);
+    patchComboPopup(m_themeCombo);
     m_themeCombo->addItem(QStringLiteral("跟随系统"), QStringLiteral("auto"));
     m_themeCombo->addItem(QStringLiteral("浅色"), QStringLiteral("light"));
     m_themeCombo->addItem(QStringLiteral("深色"), QStringLiteral("dark"));
@@ -237,6 +260,7 @@ QWidget *SettingsWindow::buildAppearancePage()
     auto *skinRow = new QHBoxLayout;
     skinRow->addWidget(new QLabel(QStringLiteral("皮肤："), page));
     m_skinCombo = new QComboBox(page);
+    patchComboPopup(m_skinCombo);
     skinRow->addWidget(m_skinCombo, 1);
     auto *skinFolderBtn = new ElButton(QStringLiteral("打开皮肤目录"), ElButton::Kind::Standard, page);
     skinRow->addWidget(skinFolderBtn);
@@ -263,6 +287,7 @@ QWidget *SettingsWindow::buildAppearancePage()
     auto *eyeRow = new QHBoxLayout;
     eyeRow->addWidget(new QLabel(QStringLiteral("表情眼睛："), page));
     m_eyeCombo = new QComboBox(page);
+    patchComboPopup(m_eyeCombo);
     const QStringList eyes = { QStringLiteral("Normal"), QStringLiteral("Happy"),
                                QStringLiteral("Angry"), QStringLiteral("Pain"),
                                QStringLiteral("Surprise"), QStringLiteral("Blink") };
@@ -283,12 +308,14 @@ QWidget *SettingsWindow::buildAppearancePage()
     auto *sizeRow = new QHBoxLayout;
     sizeRow->addWidget(new QLabel(QStringLiteral("缩放："), page));
     m_sizeCombo = new QComboBox(page);
+    patchComboPopup(m_sizeCombo);
     for (double s = 0.5; s <= 2.001; s += 0.1)
         m_sizeCombo->addItem(QStringLiteral("%1%").arg(qRound(s * 100)), s);
     sizeRow->addWidget(m_sizeCombo);
     sizeRow->addSpacing(16);
     sizeRow->addWidget(new QLabel(QStringLiteral("边缘羽化："), page));
     m_featherCombo = new QComboBox(page);
+    patchComboPopup(m_featherCombo);
     m_featherCombo->addItems({ QStringLiteral("Off"), QStringLiteral("Normal"),
                                QStringLiteral("Strong") });
     sizeRow->addWidget(m_featherCombo);
@@ -311,6 +338,7 @@ QWidget *SettingsWindow::buildAppearancePage()
     auto *emoRow = new QHBoxLayout;
     emoRow->addWidget(new QLabel(QStringLiteral("图集："), page));
     m_emoticonSetCombo = new QComboBox(page);
+    patchComboPopup(m_emoticonSetCombo);
     emoRow->addWidget(m_emoticonSetCombo, 1);
     auto *emoFolderBtn = new ElButton(QStringLiteral("打开素材目录"), ElButton::Kind::Standard, page);
     emoRow->addWidget(emoFolderBtn);
