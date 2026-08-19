@@ -111,14 +111,17 @@ auto *root = new QVBoxLayout(this);
     m_refreshTimer->setInterval(500);
     connect(m_refreshTimer, &QTimer::timeout, this, [this]() {
         // 缩放：如果运行时 SizeScale 变化（滚轮/菜单），同步到 Combo
+        // 滚轮使用连续值（×1.1/×0.9），Combo 只有离散值（50%~200% 步进 10%）
+        // 找最接近的匹配项
         m_sizeCombo->blockSignals(true);
-        for (int i = 0; i < m_sizeCombo->count(); ++i) {
-            if (std::abs(m_sizeCombo->itemData(i).toDouble() - m_floatee->SizeScale) < 0.001) {
-                if (m_sizeCombo->currentIndex() != i)
-                    m_sizeCombo->setCurrentIndex(i);
-                break;
-            }
+        int bestIdx = 0;
+        double bestDiff = std::abs(m_sizeCombo->itemData(0).toDouble() - m_floatee->SizeScale);
+        for (int i = 1; i < m_sizeCombo->count(); ++i) {
+            const double diff = std::abs(m_sizeCombo->itemData(i).toDouble() - m_floatee->SizeScale);
+            if (diff < bestDiff) { bestDiff = diff; bestIdx = i; }
         }
+        if (m_sizeCombo->currentIndex() != bestIdx)
+            m_sizeCombo->setCurrentIndex(bestIdx);
         m_sizeCombo->blockSignals(false);
         // 房间信息：实时更新
         if (m_roomInfoLabel && m_floatee->m_multi) {
@@ -363,11 +366,25 @@ QWidget *SettingsWindow::buildNetworkPage()
     m_roomInfoLabel->setWordWrap(true);
     roomCard->contentLayout()->addWidget(m_roomInfoLabel);
     auto *roomBtnRow = new QHBoxLayout;
-    m_roomListBtn = new ElButton(QStringLiteral("查看房间列表"), ElButton::Kind::Standard, page);
+    auto *createBtn = new ElButton(QStringLiteral("创建房间"), ElButton::Kind::Primary, page);
+    auto *joinBtn = new ElButton(QStringLiteral("加入房间"), ElButton::Kind::Standard, page);
+    auto *leaveBtn = new ElButton(QStringLiteral("离开房间"), ElButton::Kind::Standard, page);
+    m_roomListBtn = new ElButton(QStringLiteral("房间列表"), ElButton::Kind::Standard, page);
+    roomBtnRow->addWidget(createBtn);
+    roomBtnRow->addWidget(joinBtn);
+    roomBtnRow->addWidget(leaveBtn);
     roomBtnRow->addWidget(m_roomListBtn);
     roomBtnRow->addStretch();
     roomCard->contentLayout()->addLayout(roomBtnRow);
     lay->addWidget(roomCard);
+
+    // 房间操作：复用托盘菜单的 mpCreateRoom / mpJoinRoom / mpRoomList
+    connect(createBtn, &ElButton::clicked, m_floatee, &Floatee::mpCreateRoom);
+    connect(joinBtn, &ElButton::clicked, m_floatee, &Floatee::mpJoinRoom);
+    connect(leaveBtn, &ElButton::clicked, m_floatee, [this]() {
+        if (m_floatee->m_multi) m_floatee->m_multi->leaveRoom();
+    });
+    connect(m_roomListBtn, &ElButton::clicked, m_floatee, &Floatee::mpRoomList);
 
     // 连接/断开：直接用输入框地址（复用 mpConnect 的解析与持久化规则）
     connect(m_connectBtn, &ElButton::clicked, this, [this]() {
@@ -389,9 +406,6 @@ QWidget *SettingsWindow::buildNetworkPage()
         m_floatee->m_multi->connectTo(host, port);
     });
     connect(m_disconnectBtn, &ElButton::clicked, m_floatee, &Floatee::mpDisconnect);
-
-    // 查看房间列表
-    connect(m_roomListBtn, &ElButton::clicked, m_floatee, &Floatee::mpRoomList);
 
     lay->addStretch();
     return page;
