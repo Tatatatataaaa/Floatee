@@ -2,6 +2,7 @@
     <qresource prefix="/main">
         <file alias="emoticons.png">assets/main/emoticons.png</file>
         <file alias="Icon.png">assets/main/Icon.png</file>
+        <file alias="dropdown-arrow.svg">assets/main/dropdown-arrow.svg</file>
     </qresource>
     <qresource prefix="/skins">
         <file alias="default.png">assets/skin/default.png</file>
