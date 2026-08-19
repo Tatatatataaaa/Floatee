@@ -2,6 +2,7 @@ build/
 build_check/
 build_win/
 build_mac_check/
+mac_build_release/
 *.app
 .DS_Store
 *.user
