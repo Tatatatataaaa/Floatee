@@ -31,6 +31,11 @@
 #include <QTextStream>
 #include <cmath>
 
+#include "style/theme.h"
+#include "style/elwidgets.h"
+#include "style/elmessagebar.h"
+#include "settingswindow.h"
+
 #ifdef Q_OS_WIN
 #include <windows.h>
 #include <shellapi.h>
@@ -180,6 +185,22 @@ void Floatee::Initialize()
     m_teePos = QPointF((kWinW - ExecTeeDrawer.canvasSize()) / 2.0, kEmoticonTop);
     resize(kWinW, kWinH);
     dbgWin(QStringLiteral("[init] resize %1x%2").arg(kWinW).arg(kWinH));
+    // ── 临时调试：打印屏幕参数（用户分析多屏问题用，定位后移除）──
+    const auto screens = QGuiApplication::screens();
+    QScreen *pri = QGuiApplication::primaryScreen();
+    qDebug() << "[ScreenDebug] screen count =" << screens.size();
+    qDebug() << "[ScreenDebug] primary =" << (pri ? pri->name() : QStringLiteral("null"))
+             << "vgeo =" << (pri ? pri->virtualGeometry() : QRect());
+    for (int i = 0; i < screens.size(); ++i) {
+        QScreen *s = screens[i];
+        qDebug() << "[ScreenDebug]   [" << i << "]" << s->name()
+                 << "geo=" << s->geometry()
+                 << "avail=" << s->availableGeometry()
+                 << "dpr=" << s->devicePixelRatio()
+                 << "primary=" << (s == pri);
+    }
+    qDebug() << "[ScreenDebug] window pos=" << pos() << "size=" << size();
+    // ── 调试结束 ──
     // Multi-instance: nudge non-default profiles so their window doesn't stack
     // exactly on top of the default instance (user can drag it anywhere).
     if (!m_profile.isEmpty())
@@ -190,59 +211,10 @@ void Floatee::Initialize()
     TrayIcon.setToolTip("Floatee");
 
     TrayMenu = new FloateeMenu();
-    // 极简动态风格（与表情圆盘一致）：半透明灰色圆角背景 + 深色字体
-    // 全局 QSS：菜单 + 对话框 + 输入框 + 按钮 + 滑块等交互控件统一风格
-    qApp->setStyleSheet(QStringLiteral(
-        "QMenu {"
-        "  background-color: rgba(250,250,253,220);"
-        "  border: 1px solid rgba(150,150,168,80);"
-        "  border-radius: 8px;"
-        "  padding: 5px;"
-        "}"
-        "QMenu::item {"
-        "  color: #141414;"
-        "  padding: 6px 26px 6px 18px;"
-        "  border-radius: 5px;"
-        "  margin: 1px 5px;"
-        "  background: transparent;"
-        "}"
-        "QMenu::item:selected { background-color: rgba(120,165,255,70); }"
-        "QMenu::item:disabled { color: rgba(20,20,20,110); }"
-        "QMenu::separator { height: 1px; background: rgba(150,150,168,80); margin: 4px 12px; }"
-        "QMenu::indicator { width: 14px; height: 14px; margin-left: 4px; }"
-        "/* 对话框 / 弹窗 */"
-        "QMessageBox, QInputDialog, QDialog {"
-        "  background-color: rgba(248,248,252,245);"
-        "}"
-        "QLabel { color: #1a1a1a; background: transparent; }"
-        "QCheckBox { color: #1a1a1a; }"
-        "QCheckBox::indicator { width: 16px; height: 16px; }"
-        "/* 输入框 */"
-        "QLineEdit {"
-        "  background: rgba(255,255,255,235);"
-        "  border: 1px solid rgba(140,140,160,120);"
-        "  border-radius: 6px;"
-        "  padding: 4px 8px;"
-        "  color: #141414;"
-        "  selection-background-color: rgba(120,165,255,140);"
-        "}"
-        "QLineEdit:focus { border: 1px solid rgba(120,165,255,210); }"
-        "/* 按钮 */"
-        "QPushButton {"
-        "  background: rgba(120,165,255,55);"
-        "  border: 1px solid rgba(120,165,255,130);"
-        "  border-radius: 6px;"
-        "  padding: 5px 16px;"
-        "  color: #141414;"
-        "}"
-        "QPushButton:hover { background: rgba(120,165,255,105); }"
-        "QPushButton:pressed { background: rgba(120,165,255,150); }"
-        "QPushButton:disabled { color: rgba(20,20,20,110); background: rgba(120,165,255,30); }"
-        "/* 滑块（Color Adjust 等） */"
-        "QSlider::groove:horizontal { height: 6px; background: rgba(150,150,168,90); border-radius: 3px; }"
-        "QSlider::sub-page:horizontal { background: rgba(120,165,255,160); border-radius: 3px; }"
-        "QSlider::handle:horizontal { width: 14px; margin: -4px 0; border-radius: 7px; background: rgba(120,165,255,210); }"
-    ));
+    // ── Step1 设计系统：全局 Fluent 风格 QSS 由 Theme 单例统一生成 ──
+    // （浅/深两套；菜单/弹窗保留半透明玻璃感，卡片/按钮走 Ela 配色；
+    //   深浅模式持久化在 default.json["Theme"]，设置窗口可切换）
+    Theme::loadFromJson(Setup);
     AlwaysOnTopAction = TrayMenu->addAction("Always on Top");
     AlwaysOnTopAction->setCheckable(true);
     AlwaysOnTopAction->setChecked(Setup["Always_on_the_Top"].toBool());
@@ -311,8 +283,11 @@ void Floatee::Initialize()
     }
     connect(FeatherMenu, &QMenu::triggered, this, &Floatee::switchFeather);
 
-    QAction *colorAction = TrayMenu->addAction("Color Adjust...");
-    connect(colorAction, &QAction::triggered, this, &Floatee::openColorDialog);
+    // ── Step3 托盘精简（方案 A）：外观类子菜单（Eye/Size/Feather/Skin/
+    //    EmoticonSet）迁移到设置窗口对应页；托盘保留高频入口 ──
+    // 子菜单仍构建（保持成员与既有逻辑可用），但不挂到托盘。
+    // 详见 SettingsWindow 外观页（showPage(1)）。
+    // Color Adjust 与 Skin Settings 已移入 Skin 子菜单（见下）。
 
     // ── Skin submenu ────────────────────────────────────────────────
     // 内置皮肤只有 default（真正的默认皮肤）；其余通过外部 skins/ 目录动态加载
@@ -353,19 +328,24 @@ void Floatee::Initialize()
         SkinGroup->addAction(action);
     }
 
+    // Skin 子菜单底部操作项（顺序：Color Adjust → Open Skin Folder → Skin Settings）
     SkinMenu->addSeparator();
-    QAction *openSkinFolder = SkinMenu->addAction("Open Skins Folder");
+    QAction *colorAdjust = SkinMenu->addAction("Color Adjust");
+    connect(colorAdjust, &QAction::triggered, this, &Floatee::openColorDialog);
+    QAction *openSkinFolder = SkinMenu->addAction("Open Skin Folder");
     connect(openSkinFolder, &QAction::triggered, this, [skinsDir]() {
         QDir().mkpath(skinsDir);
         QDesktopServices::openUrl(QUrl::fromLocalFile(skinsDir));
     });
+    QAction *skinSettings = SkinMenu->addAction("Skin Settings");
+    connect(skinSettings, &QAction::triggered, this, [this]() {
+        SettingsWindow::instance(this)->showPage(1);   // 外观页
+    });
 
     connect(SkinMenu, &QMenu::triggered, this, &Floatee::switchSkin);
-
-    TrayMenu->addMenu(EyeMenu);
-    TrayMenu->addMenu(SizeMenu);
-    TrayMenu->addMenu(FeatherMenu);
+    // 保留快捷换皮肤：Skin 子菜单挂在托盘（高频操作）
     TrayMenu->addMenu(SkinMenu);
+    // Eye/Size/Feather 子菜单不再挂托盘（迁移到设置窗口外观页）
 
     // ── Emoticon Set submenu（自选表情素材，类似 Skin；纯本地不参与联网）──
     // 每个表情素材 = 一张 4×4 网格图集 PNG（含 16 个表情）；内置默认 + 外部
@@ -405,16 +385,9 @@ void Floatee::Initialize()
         QDesktopServices::openUrl(QUrl::fromLocalFile(emoDir));
     });
     connect(EmoticonSetMenu, &QMenu::triggered, this, &Floatee::switchEmoticonSet);
-    TrayMenu->addMenu(EmoticonSetMenu);
+    // Step3：EmoticonSet 子菜单不再挂托盘（迁移到设置窗口外观页）
 
-    // ── Emoticon submenu（M4：16 个表情，点击本地显示 + 联机发送）──
-    EmoticonMenu = new FloateeMenu("Emoticon");
-    for (int i = 0; i < teer::NUM_EMOTICONS; ++i)
-        EmoticonMenu->addAction(QStringLiteral("Emoticon %1").arg(i + 1))->setData(i);
-    connect(EmoticonMenu, &QMenu::triggered, this, [this](QAction *a) {
-        sendLocalEmoticon(a->data().toInt());
-    });
-    TrayMenu->addMenu(EmoticonMenu);
+    // Emoticon 托盘菜单已移除（M4 已被表情圆盘替代，见 EmoticonWheel）
 
     // ── 聊天：发送消息入口（打开自绘输入框，与消息框同款样式）──
     QAction *chatAction = TrayMenu->addAction("Send Message...");
@@ -423,8 +396,8 @@ void Floatee::Initialize()
     // ── Instance submenu: configs + multi-instance management ─────
     buildInstanceMenu();
 
-    // ── online 分支：Multiplayer 子菜单 ──
-    MpMenu = new FloateeMenu("Multiplayer");
+    // ── online 分支：Online 子菜单（原名 Multiplayer）──
+    MpMenu = new FloateeMenu("Online");
     QAction *mpConnectAction = MpMenu->addAction("Connect...");
     connect(mpConnectAction, &QAction::triggered, this, &Floatee::mpConnect);
     QAction *mpDisconnectAction = MpMenu->addAction("Disconnect");
@@ -448,13 +421,17 @@ void Floatee::Initialize()
     TrayMenu->addMenu(MpMenu);
 
     // M7：休眠 + 使用时长提醒 菜单
-    QMenu *sleepMenu = new FloateeMenu("Sleep & Break");
-    QAction *sleepGoAction = sleepMenu->addAction("Go to Sleep");
+    SleepBreakMenu = new FloateeMenu("Sleep & Break");
+    // 当前累计使用时长（分钟）显示：禁用态、实时由 onAfkTick 刷新
+    m_usageDisplayAction = SleepBreakMenu->addAction(QStringLiteral("Usage: 0 min"));
+    m_usageDisplayAction->setEnabled(false);
+    SleepBreakMenu->addSeparator();
+    QAction *sleepGoAction = SleepBreakMenu->addAction("Go to Sleep");
     connect(sleepGoAction, &QAction::triggered, this, [this]() { enterSleep(); });
-    QAction *sleepWakeAction = sleepMenu->addAction("Wake Up");
+    QAction *sleepWakeAction = SleepBreakMenu->addAction("Wake Up");
     connect(sleepWakeAction, &QAction::triggered, this, [this]() { noteActivity(); });
-    sleepMenu->addSeparator();
-    QAction *sleepTimeoutAction = sleepMenu->addAction("Sleep Timeout (s)...");
+    SleepBreakMenu->addSeparator();
+    QAction *sleepTimeoutAction = SleepBreakMenu->addAction("Sleep Timeout (s)...");
     connect(sleepTimeoutAction, &QAction::triggered, this, [this]() {
         bool ok = false;
         const int v = QInputDialog::getInt(this, QStringLiteral("Sleep Timeout"),
@@ -464,7 +441,7 @@ void Floatee::Initialize()
         Setup["SleepTimeout"] = v;
         JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
     });
-    QAction *remindAction = sleepMenu->addAction("Break Reminder (min)...");
+    QAction *remindAction = SleepBreakMenu->addAction("Break Reminder (min)...");
     connect(remindAction, &QAction::triggered, this, [this]() {
         bool ok = false;
         const int v = QInputDialog::getInt(this, QStringLiteral("Break Reminder"),
@@ -475,7 +452,7 @@ void Floatee::Initialize()
         Setup["BreakReminder"] = v;
         JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
     });
-    QAction *resetAction = sleepMenu->addAction("Reset After Sleep (min)...");
+    QAction *resetAction = SleepBreakMenu->addAction("Reset After Sleep (min)...");
     connect(resetAction, &QAction::triggered, this, [this]() {
         bool ok = false;
         const int v = QInputDialog::getInt(this, QStringLiteral("Reset After Sleep"),
@@ -486,7 +463,7 @@ void Floatee::Initialize()
         Setup["ResetAfterSleep"] = v;
         JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
     });
-    TrayMenu->addMenu(sleepMenu);
+    TrayMenu->addMenu(SleepBreakMenu);
 
     // ── online 分支：联机控制器初始化（deviceId 首次生成并持久化）──
     {
@@ -508,19 +485,11 @@ void Floatee::Initialize()
         m_multi->init(clientId, deviceId,
                       Setup.value("multiplayer").toObject().value("server").toString());
         connect(m_multi, &Multiplayer::notify, this, [this](const QString &t, const QString &x, bool warn) {
-            if (m_autoConnecting) {
-                // 启动自动连接的结果弹窗：非模态 + 2s 自动关闭（无论成功/失败）
-                m_autoConnecting = false;   // 只对自动连接结果生效一次
-                auto *box = new QMessageBox(warn ? QMessageBox::Warning : QMessageBox::Information,
-                                            t, x, QMessageBox::Ok, this);
-                box->setAttribute(Qt::WA_DeleteOnClose);
-                box->setWindowModality(Qt::NonModal);
-                box->show();
-                QTimer::singleShot(2000, box, &QMessageBox::close);
-                return;
-            }
-            if (warn) QMessageBox::warning(this, t, x);
-            else QMessageBox::information(this, t, x);
+            // Step3：通知改 ElMessageBar 边缘弹出（非模态，自动消失）
+            if (warn)
+                ElMessageBar::warning(ElMessageBar::Position::TopRight, t, x, 4000, this);
+            else
+                ElMessageBar::information(ElMessageBar::Position::TopRight, t, x, 3000, this);
         });
         connect(m_multi, &Multiplayer::statusChanged, this, [this](const QString &s) {
             if (MpStatusAction) MpStatusAction->setText(s);
@@ -538,6 +507,16 @@ void Floatee::Initialize()
         // 启动时自动连接上次使用的服务器，免手动连接
         tryAutoConnectLastServer();
     }
+
+    // ── Step2：设置窗口入口（隐藏复用单例；5 页设置 + 主题切换）──
+    QAction *settingsAction = TrayMenu->addAction("Settings...");
+    connect(settingsAction, &QAction::triggered, this, [this]() {
+        SettingsWindow::instance(this)->showPage(0);
+    });
+
+    // 多屏幕兜底：把窗口放回主屏中心（防止拖到屏幕间隙或拔屏后丢失）
+    QAction *resetPosAction = TrayMenu->addAction("Reset Position");
+    connect(resetPosAction, &QAction::triggered, this, &Floatee::resetWindowPosition);
 
     TrayMenu->addSeparator();
     QAction *quitAction = TrayMenu->addAction("Quit");
@@ -668,6 +647,7 @@ Floatee::~Floatee()
         m_logFile.close();
     }
     delete ui;
+    Theme::saveToJson(Setup);   // Step1：主题取值随配置一并落盘
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
@@ -1825,6 +1805,116 @@ void Floatee::toggleAlwaysOnTop()
     JsonOpt::Json2File(Path_Setup, QJsonDocument(Setup));
 }
 
+// 多屏幕兜底：把窗口放回真实可见区域，防止上下屏间隙/拔屏后窗口丢失。
+// 实现要点（macOS 多屏布局下特别重要）：
+//   1. 用 screen->geometry() 而非 availableGeometry()——后者排除任务栏/Dock，
+//      多屏上下布局下任务栏常驻其中一块屏，会把可用区域切得极小，
+//      居中后窗口反而跨进间隙或落到底部不可见区域。
+//   2. 选屏：优先选与当前窗口重叠面积最大的屏；无重叠则按 curCenter 欧氏距离最近。
+//   3. setGeometry 而非 move——保证位置+尺寸原子提交，避免 WM 二次调整。
+//   4. move 后验证：结果必须完全落在某块屏的 geometry 内，否则改用主屏几何
+//      强制居中（兜底）。
+void Floatee::resetWindowPosition()
+{
+    const QSize sz = size();
+    const QRect curRect(pos(), sz);
+    const QPoint curCenter = curRect.center();
+    const auto screens = QGuiApplication::screens();
+    // 临时调试：始终打印（用户分析用，定位后移除）
+    qDebug() << "[ResetDebug] trigger curRect=" << curRect
+             << "m_fullscreenCanvas=" << m_fullscreenCanvas
+             << "frameGeometry=" << frameGeometry();
+    for (int i = 0; i < screens.size(); ++i) {
+        QScreen *s = screens[i];
+        qDebug() << "[ResetDebug]   screen" << i << s->name()
+                 << "geo=" << s->geometry() << "avail=" << s->availableGeometry();
+    }
+
+    // ── 全屏画布模式：窗口本身覆盖某块屏，问题不在窗口位置，而在画布内
+    //   Tee 的 m_localTeePos 跑到屏外/极端位置。直接移动 Tee 到窗口中心。
+    // 关键：m_localTeePos 是全局屏幕坐标，渲染时通过 painter.translate(-pos())
+    // 偏移回窗口内，所以 Tee 显示位置 = m_localTeePos - pos()。
+    // 因此 target 必须用窗口自身 geometry（=当前所在屏幕），而非 primaryScreen：
+    //   - 若窗口在 secondary（pos=(-401,-1415)），用 secondary 几何
+    //   - 若窗口在 primary，用 primary 几何
+    // 否则在 secondary 屏时会把 m_localTeePos 设为 primary 中心，减去 secondary
+    // pos 后实际显示坐标远在窗口外（用户反馈"看不见 Tee"）。
+    if (m_fullscreenCanvas) {
+        const QRect winGeo = geometry();   // 当前窗口（=当前所在屏幕）
+        const QPointF winCenter(winGeo.center());
+        m_localTeePos = QPointF(winCenter.x() - kWinW / 2.0,
+                                winCenter.y() - kWinH / 2.0);
+        clampTeePos(m_localTeePos,
+                    QRect(0, 0, ExecTeeDrawer.canvasSize(), ExecTeeDrawer.canvasSize()));
+        update();
+        qDebug() << "[ResetDebug] fullscreen mode, winGeo=" << winGeo
+                 << "moved Tee to" << m_localTeePos;
+        raise();
+        activateWindow();
+        ElMessageBar::success(ElMessageBar::Position::TopRight,
+                              QStringLiteral("位置"),
+                              QStringLiteral("已重置 Tee 到屏幕中心"), 2000, this);
+        return;
+    }
+
+    // ── 小窗口模式：按"重叠面积最大优先，否则最近"选屏，居中+clamp ──
+    QScreen *scr = nullptr;
+    int bestOverlap = 0;
+    for (QScreen *s : screens) {
+        const QRect g = s->geometry();
+        const QRect inter = g.intersected(curRect);
+        const int area = inter.width() * inter.height();
+        if (area > bestOverlap) { bestOverlap = area; scr = s; }
+    }
+    if (bestOverlap <= 0) {
+        qint64 bestD = std::numeric_limits<qint64>::max();
+        for (QScreen *s : screens) {
+            const QPoint sc = s->geometry().center();
+            const qint64 dx = qint64(sc.x()) - curCenter.x();
+            const qint64 dy = qint64(sc.y()) - curCenter.y();
+            const qint64 d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; scr = s; }
+        }
+    }
+    if (!scr) {
+        scr = QGuiApplication::primaryScreen();
+        if (!scr) return;
+    }
+    const QRect g = scr->geometry();
+    QPoint p(g.center().x() - sz.width()  / 2,
+             g.center().y() - sz.height() / 2);
+    if (!m_profile.isEmpty())
+        p += QPoint(60, 60);
+    p.setX(qBound(g.left(),  p.x(), qMax(g.left(),  g.right()  - sz.width()  + 1)));
+    p.setY(qBound(g.top(),   p.y(), qMax(g.top(),   g.bottom() - sz.height() + 1)));
+    qDebug() << "[ResetDebug] chose screen" << scr->name()
+             << "geo=" << g << "picked p=" << p << "sz=" << sz;
+    setGeometry(QRect(p, sz));
+    qDebug() << "[ResetDebug] after setGeometry pos=" << pos() << "size=" << size();
+    bool fullyVisible = false;
+    for (QScreen *s : QGuiApplication::screens()) {
+        if (s->geometry().intersected(QRect(p, sz)) == QRect(p, sz)) {
+            fullyVisible = true; break;
+        }
+    }
+    if (!fullyVisible) {
+        qDebug() << "[ResetDebug] NOT fully visible, fallback to primary";
+        QScreen *pri = QGuiApplication::primaryScreen();
+        if (pri) {
+            const QRect pg = pri->geometry();
+            const QPoint pp(pg.center().x() - sz.width()  / 2,
+                            pg.center().y() - sz.height() / 2);
+            setGeometry(QRect(pp, sz));
+            qDebug() << "[ResetDebug] fallback pos=" << pos() << "size=" << size();
+        }
+    }
+    raise();
+    activateWindow();
+    ElMessageBar::success(ElMessageBar::Position::TopRight,
+                          QStringLiteral("位置"),
+                          QStringLiteral("已重置窗口位置"), 2000, this);
+}
+
 void Floatee::toggleWindowSideHide()
 {
     bool on = WindowSideHideAction->isChecked();
@@ -1991,22 +2081,28 @@ void Floatee::tryAutoConnectLastServer()
 void Floatee::mpCreateRoom()
 {
     if (!m_multi) return;
-    QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("Create Room"));
-    auto *form = new QVBoxLayout(&dlg);
+    // Step3：Fluent 风格对话框（无边框圆角 + 可拖动标题栏 + 阴影）
+    ElDialog dlg(QStringLiteral("创建房间"), this);
+    dlg.resize(420, 240);
     auto *nameEdit = new QLineEdit(&dlg);
     nameEdit->setPlaceholderText(QStringLiteral("房间名（可选）"));
     auto *pubCheck = new QCheckBox(QStringLiteral("公共房间（出现在房间列表，可被直接加入）"), &dlg);
     auto *pwdEdit = new QLineEdit(&dlg);
     pwdEdit->setPlaceholderText(QStringLiteral("密码（可选，留空则无密码）"));
     pwdEdit->setEchoMode(QLineEdit::Password);
-    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    connect(btns, &QDialogButtonBox::accepted, &dlg, &QDialog::accept);
-    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
-    form->addWidget(nameEdit);
-    form->addWidget(pubCheck);
-    form->addWidget(pwdEdit);
-    form->addWidget(btns);
+    auto *btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    auto *okBtn = new ElButton(QStringLiteral("创建"), ElButton::Kind::Primary, &dlg);
+    auto *cancelBtn = new ElButton(QStringLiteral("取消"), ElButton::Kind::Standard, &dlg);
+    connect(okBtn, &ElButton::clicked, &dlg, &QDialog::accept);
+    connect(cancelBtn, &ElButton::clicked, &dlg, &QDialog::reject);
+    btnRow->addWidget(cancelBtn);
+    btnRow->addWidget(okBtn);
+    dlg.contentLayout()->addWidget(nameEdit);
+    dlg.contentLayout()->addWidget(pubCheck);
+    dlg.contentLayout()->addWidget(pwdEdit);
+    dlg.contentLayout()->addStretch();
+    dlg.contentLayout()->addLayout(btnRow);
     if (dlg.exec() != QDialog::Accepted)
         return;
     m_multi->createRoom(nameEdit->text().trimmed(), pubCheck->isChecked(),
@@ -2031,15 +2127,18 @@ void Floatee::mpJoinRoom()
 void Floatee::mpShowJoinCode()
 {
     if (!m_multi || !m_multi->inRoom()) {
-        QMessageBox::information(this, QStringLiteral("Multiplayer"),
-                                 QStringLiteral("当前不在房间中"));
+        ElMessageBar::information(ElMessageBar::Position::TopRight,
+                                  QStringLiteral("Multiplayer"),
+                                  QStringLiteral("当前不在房间中"), 3000, this);
         return;
     }
     const QString pw = m_multi->joinCode();
-    QMessageBox::information(this, QStringLiteral("Multiplayer"),
-        QStringLiteral("房间号: %1\n密码: %2\n（把密码分享给朋友即可加入）")
-            .arg(m_multi->roomId(),
-                 pw.isEmpty() ? QStringLiteral("（无密码，凭房间号即可加入）") : pw));
+    ElMessageBar::success(ElMessageBar::Position::TopRight,
+                          QStringLiteral("房间信息"),
+                          QStringLiteral("房间号: %1  密码: %2")
+                              .arg(m_multi->roomId(),
+                                   pw.isEmpty() ? QStringLiteral("（无密码，凭房间号即可加入）") : pw),
+                          6000, this);
 }
 
 void Floatee::mpRoomList()
@@ -2050,9 +2149,9 @@ void Floatee::mpRoomList()
 void Floatee::showRoomListDialog(const QList<QJsonObject> &rooms)
 {
     if (!m_multi) return;
-    QDialog dlg(this);
-    dlg.setWindowTitle(QStringLiteral("公共房间"));
-    auto *lay = new QVBoxLayout(&dlg);
+    // Step3：Fluent 风格房间列表（卡片式列表 + 双击加入）
+    ElDialog dlg(QStringLiteral("公共房间"), this);
+    dlg.resize(480, 380);
     auto *list = new QListWidget(&dlg);
     for (const QJsonObject &r : rooms) {
         const QString label = QStringLiteral("%1  %2  (%3/%4)  %5")
@@ -2065,12 +2164,15 @@ void Floatee::showRoomListDialog(const QList<QJsonObject> &rooms)
     }
     if (rooms.isEmpty())
         new QListWidgetItem(QStringLiteral("（当前没有公共房间）"), list);
-    lay->addWidget(new QLabel(QStringLiteral("双击公共房间加入；带 🔒 需输入密码"), &dlg));
-    lay->addWidget(list);
-    auto *btns = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dlg);
-    btns->button(QDialogButtonBox::Ok)->setText(QStringLiteral("刷新"));
-    btns->button(QDialogButtonBox::Cancel)->setText(QStringLiteral("关闭"));
-    lay->addWidget(btns);
+    auto *btnRow = new QHBoxLayout;
+    btnRow->addStretch();
+    auto *refreshBtn = new ElButton(QStringLiteral("刷新"), ElButton::Kind::Standard, &dlg);
+    auto *closeBtn = new ElButton(QStringLiteral("关闭"), ElButton::Kind::Standard, &dlg);
+    btnRow->addWidget(refreshBtn);
+    btnRow->addWidget(closeBtn);
+    dlg.contentLayout()->addWidget(new QLabel(QStringLiteral("双击公共房间加入；带 🔒 需输入密码"), &dlg));
+    dlg.contentLayout()->addWidget(list, 1);
+    dlg.contentLayout()->addLayout(btnRow);
 
     // 双击加入：有密码则提示输入，否则直接加入
     connect(list, &QListWidget::itemDoubleClicked, &dlg, [this, &dlg, list](QListWidgetItem *item) {
@@ -2088,11 +2190,11 @@ void Floatee::showRoomListDialog(const QList<QJsonObject> &rooms)
         }
     });
     // 刷新：关闭当前对话框并重新查询（回调会再次弹出）
-    connect(btns->button(QDialogButtonBox::Ok), &QPushButton::clicked, &dlg, [this, &dlg]() {
+    connect(refreshBtn, &ElButton::clicked, &dlg, [this, &dlg]() {
         dlg.done(QDialog::Accepted);
         m_multi->listRooms();
     });
-    connect(btns, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+    connect(closeBtn, &ElButton::clicked, &dlg, &QDialog::reject);
     dlg.exec();
 }
 
@@ -2169,13 +2271,22 @@ void Floatee::onAfkTick()
         enterSleep();
         return;
     }
-    // 使用时长统计（仅非休眠累加）+ 定期休息提醒
-    if (m_breakReminderMin > 0) {
+    // 使用时长统计（非休眠时每秒累加；提醒关闭也照常记录）+
+    // 定期休息提醒（达间隔归零）
+    if (!m_sleeping) {
         m_usageSeconds++;
-        if (m_usageSeconds >= m_breakReminderMin * 60) {
+        if (m_breakReminderMin > 0 && m_usageSeconds >= m_breakReminderMin * 60) {
             m_usageSeconds = 0;
             showBreakReminder();
         }
+    }
+    // 刷新 Sleep & Break 菜单里的累计使用时长（分钟）
+    if (m_usageDisplayAction) {
+        const int mins = m_usageSeconds / 60;
+        const QString label = QStringLiteral("Usage: %1 min%2")
+            .arg(mins).arg(mins == 1 ? QString() : QStringLiteral("s"));
+        if (m_usageDisplayAction->text() != label)
+            m_usageDisplayAction->setText(label);
     }
 }
 

@@ -66,6 +66,10 @@ set(SOURCES
     src/ui/emoticonwheel.cpp
     src/net/netclient.cpp
     src/multiplayer/multiplayer.cpp
+    src/ui/style/theme.cpp
+    src/ui/style/elwidgets.cpp
+    src/ui/style/elmessagebar.cpp
+    src/ui/settingswindow.cpp
     ${PLATFORM_SOURCES}
 )
 
@@ -80,6 +84,10 @@ set(HEADERS
     src/ui/emoticonwheel.h
     src/net/netclient.h
     src/multiplayer/multiplayer.h
+    src/ui/style/theme.h
+    src/ui/style/elwidgets.h
+    src/ui/style/elmessagebar.h
+    src/ui/settingswindow.h
     src/platform/platformwindowinfo.h
 )
 

@@ -31,6 +31,9 @@
 
 class QLineEdit;
 
+// Step2 设置窗口：复用 Floatee 的设置槽函数与 Setup 读写（friend 授权）
+class SettingsWindow;
+
 QT_BEGIN_NAMESPACE
 namespace Ui {
 class Floatee;
@@ -68,6 +71,8 @@ class Floatee : public QMainWindow
     Q_OBJECT
 
 public:
+    friend class SettingsWindow;
+
     Floatee(QWidget *parent = nullptr);
     ~Floatee();
     void Loading();
@@ -87,7 +92,6 @@ public:
     QMenu *EyeMenu = nullptr;
     QMenu *SizeMenu = nullptr;
     QMenu *FeatherMenu = nullptr;
-    QMenu *EmoticonMenu = nullptr;   // M4：16 表情托盘子菜单
     QMenu *EmoticonSetMenu = nullptr; // 表情素材（图集）子菜单，类似 Skin
     QMenu *InstanceMenu = nullptr;
     QActionGroup *SkinGroup = nullptr;
@@ -139,6 +143,9 @@ public:
     Multiplayer *m_multi = nullptr;
     QMenu *MpMenu = nullptr;
     QAction *MpStatusAction = nullptr;
+    // M7：Sleep & Break 子菜单（含当前使用时长显示，onAfkTick 每秒刷新）
+    QMenu *SleepBreakMenu = nullptr;
+    QAction *m_usageDisplayAction = nullptr;
 
     // ── M2 多人渲染：全屏画布 + Peer ──
     // 注意：TeeDrawer 的 m_renderer 持有 &m_backend（裸指针），浅拷贝会悬垂。
@@ -243,6 +250,8 @@ protected:
 protected slots:
     void on_systemTrayActivated(QSystemTrayIcon::ActivationReason reason);
     void toggleAlwaysOnTop();
+    // 多屏幕：把窗口放回主屏中心（防止拖到屏幕间隙丢失）
+    void resetWindowPosition();
     void toggleWindowSideHide();
     void toggleTeEyes();
     void refreshTranslucentDisplay();
