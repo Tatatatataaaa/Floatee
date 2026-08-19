@@ -11,6 +11,7 @@ class QLineEdit;
 class QPushButton;
 class QToolButton;
 class QLabel;
+class QTimer;
 
 class Floatee;
 
@@ -73,9 +74,13 @@ private:
     QLineEdit *m_sleepTimeoutEdit = nullptr;
     QLineEdit *m_breakRemindEdit = nullptr;
     QLineEdit *m_resetAfterEdit = nullptr;
+    QLabel *m_usageLabel = nullptr;   // 累计使用时长显示（秒）
 
     // 实例页
     QListWidget *m_instanceList = nullptr;
+
+    // 定时刷新（SizeScale、使用时长等运行时状态）
+    QTimer *m_refreshTimer = nullptr;
 };
 
 #endif // FLOATEE_SETTINGSWINDOW_H

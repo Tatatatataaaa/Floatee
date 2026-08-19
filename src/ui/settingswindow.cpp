@@ -104,6 +104,48 @@ auto *root = new QVBoxLayout(this);
     connect(m_nav, &QListWidget::currentRowChanged, m_pages, &QStackedWidget::setCurrentIndex);
 
     connect(Theme::instance(), &Theme::themeChanged, this, [this]() { update(); });
+
+    // ── 运行时状态实时刷新（SizeScale、服务器状态、使用时长）──
+    // 定时器：每 500ms 刷新 SizeScale 和使用时长（轻量级，仅更新文本）
+    m_refreshTimer = new QTimer(this);
+    m_refreshTimer->setInterval(500);
+    connect(m_refreshTimer, &QTimer::timeout, this, [this]() {
+        // 缩放：如果运行时 SizeScale 变化（滚轮/菜单），同步到 Combo
+        m_sizeCombo->blockSignals(true);
+        for (int i = 0; i < m_sizeCombo->count(); ++i) {
+            if (qFuzzyCompare(m_sizeCombo->itemData(i).toDouble(), m_floatee->SizeScale)) {
+                if (m_sizeCombo->currentIndex() != i)
+                    m_sizeCombo->setCurrentIndex(i);
+                break;
+            }
+        }
+        m_sizeCombo->blockSignals(false);
+        // 使用时长
+        if (m_usageLabel) {
+            const int secs = m_floatee->m_usageSeconds;
+            const int mins = secs / 60;
+            const int hrs = mins / 60;
+            QString text;
+            if (hrs > 0)
+                text = QStringLiteral("当前使用时长：%1 小时 %2 分钟").arg(hrs).arg(mins % 60);
+            else
+                text = QStringLiteral("当前使用时长：%1 分钟").arg(mins);
+            if (m_usageLabel->text() != text)
+                m_usageLabel->setText(text);
+        }
+    });
+    // 窗口可见时启动定时器，隐藏时停止（节省 CPU）
+    // visibleChanged 信号在 Qt 5.15+ 才有，改用 showEvent/hideEvent
+    // （在 showPage 中启动，closeEvent 中停止）
+
+    // 服务器状态：连接 Multiplayer::statusChanged 实时更新
+    if (m_floatee->m_multi) {
+        connect(m_floatee->m_multi, &Multiplayer::statusChanged, this,
+                [this](const QString &s) {
+                    if (m_mpStatus && m_mpStatus->text() != s)
+                        m_mpStatus->setText(s);
+                });
+    }
 }
 
 // ═══════════════════════ 页面构建 ═══════════════════════
@@ -360,6 +402,15 @@ QWidget *SettingsWindow::buildSleepPage()
     makeRow(QStringLiteral("单次休眠超过多少分钟视为新会话："),
             m_resetAfterEdit, QStringLiteral("0-43200"), 0, 43200);
 
+    // 当前累计使用时长（实时更新，与托盘菜单一致）
+    auto *usageRow = new QHBoxLayout;
+    m_usageLabel = new QLabel(QStringLiteral("当前使用时长：0 分钟"), page);
+    m_usageLabel->setStyleSheet(QStringLiteral("color: %1; font-weight: bold;")
+        .arg(Theme::textSecondary().name()));
+    usageRow->addWidget(m_usageLabel);
+    usageRow->addStretch();
+    grid->addLayout(usageRow);
+
     card->contentLayout()->addLayout(grid);
     lay->addWidget(card);
 
@@ -520,6 +571,14 @@ void SettingsWindow::refreshFromSetup()
     m_serverEdit->setText(s.value(QStringLiteral("multiplayer")).toObject()
                               .value(QStringLiteral("server"))
                               .toString(QStringLiteral("127.0.0.1:8764")));
+    // 服务器状态：从 Multiplayer 实例获取当前状态
+    if (m_floatee->m_multi && m_mpStatus) {
+        const QString status = m_floatee->m_multi->isConnected()
+                               ? QStringLiteral("已连接")
+                               : QStringLiteral("离线");
+        if (m_mpStatus->text() != status)
+            m_mpStatus->setText(status);
+    }
 
     // 休眠
     m_sleepTimeoutEdit->setText(QString::number(s.value(QStringLiteral("SleepTimeout")).toInt(60)));
@@ -550,6 +609,9 @@ void SettingsWindow::showPage(int index)
     show();
     raise();
     activateWindow();
+    // 启动定时刷新（SizeScale、使用时长等运行时状态）
+    if (m_refreshTimer && !m_refreshTimer->isActive())
+        m_refreshTimer->start();
 }
 
 void SettingsWindow::paintEvent(QPaintEvent *event)
@@ -570,6 +632,9 @@ void SettingsWindow::paintEvent(QPaintEvent *event)
 
 void SettingsWindow::closeEvent(QCloseEvent *event)
 {
+    // 停止定时刷新
+    if (m_refreshTimer)
+        m_refreshTimer->stop();
     // 隐藏复用：关闭仅隐藏，不销毁
     event->ignore();
     hide();
