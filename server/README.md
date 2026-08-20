@@ -17,18 +17,17 @@ npm start          # 启动（tcp:8764, ws:9001, admin:8766）
 npm test           # 单元测试（node:test）
 ```
 
-配置见 `config.example.json`（复制为 `config.json` 使用；`config.json` 不入库）。
-默认值在 `src/config.js`，可用环境变量覆盖：`TCP_PORT`/`PORT`(ws)/`ADMIN_PORT`/`ADMIN_KEY`。
+配置见 `src/config.example.json`（复制为 `config.json` ）
+可用环境变量覆盖：`TCP_PORT`/`ADMIN_PORT`/`ADMIN_KEY`
 
 ## 传输
 
-| 端口 | 传输 | 协议 | 用途 |
-| --- | --- | --- | --- |
-| 8764 | TCP | JSON 行（`\n` 分隔） | **客户端主连接**（QTcpSocket） |
-| 9001 | WebSocket | JSON 文本帧 | 备用传输（Web 客户端等） |
-| 8766 | HTTP | REST | 管理接口（`X-Admin-Key` 鉴权） |
+| 端口 | 传输 | 协议                   | 用途                                 |
+| ---- | ---- | ---------------------- | ------------------------------------ |
+| 9000 | TCP  | JSON 行（`\n` 分隔） | **客户端主连接**（QTcpSocket） |
+| 9001 | HTTP | REST                   | 管理接口（`X-Admin-Key` 鉴权）     |
 
-三端共享同一套房间/协议逻辑（`rooms.js` + `protocol.js` + `session.js`）。
+三端共享同一套房间/协议逻辑（`rooms.js` + `protocol.js` + `session.js`）
 
 ## 目录
 

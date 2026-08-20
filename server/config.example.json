@@ -1,9 +1,9 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "wsPort": 9001,
-    "tcpPort": 8764,
-    "adminPort": 8766,
+    "wsPort": 9002,
+    "tcpPort": 9000,
+    "adminPort": 9001,
     "maxConnections": 1000
   },
   "room": {
