@@ -27,7 +27,7 @@ npm test           # 单元测试（node:test）
 | 9000 | TCP  | JSON 行（`\n` 分隔） | **客户端主连接**（QTcpSocket） |
 | 9001 | HTTP | REST                   | 管理接口（`X-Admin-Key` 鉴权）     |
 
-三端共享同一套房间/协议逻辑（`rooms.js` + `protocol.js` + `session.js`）
+共享同一套房间/协议逻辑（`rooms.js` + `protocol.js` + `session.js`）
 
 ## 目录
 
