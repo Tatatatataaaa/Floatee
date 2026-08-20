@@ -37,6 +37,15 @@ DDraceNetwork / Teeworlds 世界）：
 - 从 DDNet 皮肤库自动下载远端皮肤（计划中）
 - Node.js 中转服务器：房间管理 / 限流 / admin API
 
+### 设置与 UI
+- **设置窗口**：5 页布局（常规、外观、联机、休眠、实例）
+  - 深浅主题切换（跟随系统或手动）
+  - 缩放比例、服务器状态、使用时长实时同步
+  - 房间信息显示（创建/加入/离开/列表按钮）
+- **主题系统**：Fluent 风格设计，半透明玻璃质感
+- **使用时长统计**：累计使用时间，支持休息提醒
+- **重置位置**：多屏幕支持，找回丢失的宠物
+
 ## ❤️ 贡献者
 
 感谢所有为本项目提交代码、反馈问题与提出改进的贡献者。
@@ -61,6 +70,16 @@ cmake -S . -B build
 cmake --build build -j
 ```
 
+### macOS Release 构建
+```sh
+mkdir build_release && cd build_release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+cmake --build . -j 8
+macdeployqt Floatee.app -qmldir=. -verbose=1
+codesign --force --deep --sign - Floatee.app
+```
+输出：`build_release/Floatee.app`（可直接分发）
+
 ### 运行联机服务器
 ```sh
 cd server
@@ -80,12 +99,26 @@ npm test         # node --test（19 个用例）
 ### 客户端
 构建并启动 `Floatee`，右键托盘图标探索菜单。
 
+## 🖼 截图
+
+*请提供以下截图以完成本节：*
+
+1. **主界面**：Tee + 表情圆盘打开（显示 16 个表情）
+2. **设置窗口 - 常规页**：主题切换（跟随系统/浅色/深色）+ 窗口设置
+3. **设置窗口 - 外观页**：皮肤选择、眼睛/缩放/羽化控件
+4. **设置窗口 - 联机页**：服务器连接、房间信息、房间操作按钮
+5. **设置窗口 - 休眠页**：使用时长显示 + 休眠设置
+6. **多人模式**：多个 Tee 在同一房间（同步眼睛/皮肤/聊天）
+7. **深色主题**：设置窗口深色模式外观
+8. **多屏幕重置**：Reset Position 功能（跨屏幕演示）
+
 ## 🏛 致谢
 
 - **DDNet / Teeworlds** —— Tee 渲染管线（`tee_render`）与皮肤数据库来自
   DDraceNetwork 项目
 - **QMClient** —— 表情圆盘交互参考
 - **Qt Project** —— Qt 6 框架（LGPL）
+- **ElaWidgetTools** —— UI 设计参考（Fluent 风格）
 
 ## 📜 许可
 

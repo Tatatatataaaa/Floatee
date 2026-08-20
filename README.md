@@ -43,6 +43,16 @@ emoticon-wheel interaction is inspired by QMClient's `CEmoticon`.
 - Automatic download of remote skins from the DDNet skin database (planned)
 - Node.js relay server with room management, throttling and admin API
 
+### Settings & UI
+
+- **Settings window**: 5-page layout (General, Appearance, Network, Sleep, Instance)
+  - Dark/light theme toggle (follows system or manual)
+  - Real-time sync of zoom scale, server status, usage time
+  - Room info display with create/join/leave/list buttons
+- **Theme system**: Fluent design with translucent glass style
+- **Usage tracking**: cumulative usage time with break reminders
+- **Reset Position**: multi-screen support for lost pet recovery
+
 ## 🚀 Build
 
 ### Requirements
@@ -65,6 +75,18 @@ cmake --build build --config Release
 cmake -S . -B build
 cmake --build build -j
 ```
+
+### macOS Release Build
+
+```sh
+mkdir build_release && cd build_release
+cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+cmake --build . -j 8
+macdeployqt Floatee.app -qmldir=. -verbose=1
+codesign --force --deep --sign - Floatee.app
+```
+
+Output: `build_release/Floatee.app` (ready for distribution)
 
 ### Run the multiplayer server
 
@@ -89,12 +111,26 @@ npm test         # node --test (19 cases)
 
 Build and launch `Floatee`; right-click the tray icon to explore menus.
 
+## 🖼 Screenshots
+
+*Please provide the following screenshots to complete this section:*
+
+1. **Main Interface**: Tee with emoticon wheel open (showing 16 emotes)
+2. **Settings Window**: General page with theme toggle and window settings
+3. **Appearance Page**: Skin selection, eye/size/feather controls
+4. **Network Page**: Server connection, room info, and room operations
+5. **Sleep Page**: Usage time display and sleep settings
+6. **Multiplayer**: Multiple Tees in a room (synced eyes, skins, chat)
+7. **Dark Theme**: Settings window in dark mode
+8. **Multi-screen**: Reset Position feature across multiple monitors
+
 ## 🏛 Credits
 
 - **DDNet / Teeworlds** — the Tee rendering pipeline (`tee_render`) and skin
   database are from the DDraceNetwork project
 - **QMClient** — emoticon wheel interaction reference
 - **Qt Project** — Qt 6 framework (LGPL)
+- **ElaWidgetTools** — UI design inspiration (Fluent style)
 
 ## 📜 License
 
