@@ -35,7 +35,8 @@ emoticon-wheel interaction is inspired by QMClient's `CEmoticon`.
 
 ### Multiplayer
 
-- Room system (6-digit room ID + 4-char invite code)
+- Room system (6-digit room ID, optional password; public rooms appear in a
+  shared room list and can be joined directly)
 - See other players' Tees, drag/zoom them locally
 - Synced eyes (look direction), skins (auto-fallback to default),
   HSL colours, emotes (real-time broadcast) and chat bubbles
@@ -93,10 +94,10 @@ Output: `build_release/Floatee.app` (ready for distribution)
 ```sh
 cd server
 npm install
-npm start        # TCP 8764 / WS 9001 / Admin 8766
+npm start        # TCP 9000 / Admin 9001
 ```
 
-See [server/DEPLOYMENT.md](server/DEPLOYMENT.md) for deployment details.
+See [server/README.md](server/README.md) for deployment details.
 
 ## ✅ Test
 
@@ -104,7 +105,7 @@ See [server/DEPLOYMENT.md](server/DEPLOYMENT.md) for deployment details.
 
 ```sh
 cd server
-npm test         # node --test (19 cases)
+npm test         # node --test (21 cases)
 ```
 
 ### Client

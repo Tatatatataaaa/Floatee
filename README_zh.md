@@ -29,7 +29,7 @@ DDraceNetwork / Teeworlds 世界）：
 - 极简现代 UI（半透明圆角菜单 / 弹窗 / 输入框）
 
 ### 联机
-- 房间系统（6 位数字房间号 + 4 位邀请码）
+- 房间系统（6 位数字房间号，可选密码；**公共房**出现在共享房间列表，可直接加入）
 - 互相显示对方的 Tee（本地可拖拽 / 缩放）
 - 同步眼睛（视线方向）、皮肤（缺失自动回落 default）、HSL 配色、
   表情（实时广播）与聊天气泡
@@ -84,16 +84,16 @@ codesign --force --deep --sign - Floatee.app
 ```sh
 cd server
 npm install
-npm start        # TCP 8764 / WS 9001 / Admin 8766
+npm start        # TCP 9000 / Admin 9001
 ```
-部署详见 [server/DEPLOYMENT.md](server/DEPLOYMENT.md)。
+部署详见 [server/README.md](server/README.md)。
 
 ## ✅ 测试
 
 ### 服务器
 ```sh
 cd server
-npm test         # node --test（19 个用例）
+npm test         # node --test（21 个用例）
 ```
 
 ### 客户端
