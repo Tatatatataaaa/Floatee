@@ -5,31 +5,28 @@ Floatee 多人联机的公网中转服务器：负责**房间管理**与**消息
 ## 技术栈
 
 - Node.js ≥ 18（ESM）
-- `ws`（WebSocket 服务器，唯一运行时依赖）
-- Node 内置 `http`（管理接口）与 `net`（TCP 测试端口）
+- Node 内置 `net`（TCP 服务器，客户端主连接）与 `http`（管理接口）
+- `ws`（WebSocket 服务器，备用传输）
 
 ## 快速开始
 
 ```bash
 cd server
 npm install
-npm start          # 启动（默认 ws:8765, tcp:8764, admin:8766）
+npm start          # 启动（tcp:8764, ws:9001, admin:8766）
 npm test           # 单元测试（node:test）
 ```
 
-配置见 `config.json`（默认值在 `src/config.js`，可用环境变量覆盖：`PORT`/`TCP_PORT`/`ADMIN_PORT`/`ADMIN_KEY`）。
-
-> **安全**：`config.json` 含敏感信息（`adminKey` 等），**不入库**（已加入 `.gitignore`）。
-> 部署时复制 `config.example.json` 为 `config.json` 再按需修改；Admin 密钥建议通过
-> 环境变量 `ADMIN_KEY` 提供，避免写入文件。若密钥曾提交到公开仓库，请立即轮换。
+配置见 `config.example.json`（复制为 `config.json` 使用；`config.json` 不入库）。
+默认值在 `src/config.js`，可用环境变量覆盖：`TCP_PORT`/`PORT`(ws)/`ADMIN_PORT`/`ADMIN_KEY`。
 
 ## 传输
 
 | 端口 | 传输 | 协议 | 用途 |
 | --- | --- | --- | --- |
-| 8765 | WebSocket | JSON 文本帧 | 正式客户端（Qt QWebSocket，待 Qt WebSockets 模块就绪） |
-| 8764 | TCP | JSON 行（`\n` 分隔） | 客户端通信测试（QTcpSocket）/ 备用 |
-| 8766 | HTTP | REST | 手动管理接口（`X-Admin-Key` 鉴权） |
+| 8764 | TCP | JSON 行（`\n` 分隔） | **客户端主连接**（QTcpSocket） |
+| 9001 | WebSocket | JSON 文本帧 | 备用传输（Web 客户端等） |
+| 8766 | HTTP | REST | 管理接口（`X-Admin-Key` 鉴权） |
 
 三端共享同一套房间/协议逻辑（`rooms.js` + `protocol.js` + `session.js`）。
 
@@ -69,7 +66,7 @@ POST   /api/rooms/:id/broadcast  # 向房间广播 JSON（body）
 
 见 `../MULTIPLAYER_PLAN.md` §4（与 Qt 客户端 `src/net/protocol.h` 语义一致）：
 
-- C→S：`hello` `create_room` `join_room` `leave_room` `list_rooms` `room_settings` `kick_member` `disband_room` `add_role` `remove_role` `skin_update` `mouse` `emoticon` `ping`
-- S→C：`welcome` `room_created` `room_joined` `room_left` `room_list` `room_settings_updated` `room_closed` `peer_joined` `peer_left` `peer_kicked` `peer_skin` `peer_mouse` `peer_emoticon` `pong` `error`
+- C→S：`hello` `create_room` `join_room` `leave_room` `list_rooms` `room_settings` `kick_member` `disband_room` `add_role` `remove_role` `skin_update` `mouse` `emoticon` `chat` `ping`
+- S→C：`welcome` `room_created` `room_joined` `room_left` `room_list` `room_settings_updated` `room_closed` `peer_joined` `peer_left` `peer_kicked` `peer_skin` `peer_mouse` `peer_emoticon` `peer_chat` `pong` `error`
 
 要点：默认凭证房（唯一 `joinCode`，随房间存亡）；房主 `ownerToken` 管理（kick/settings/disband）；每设备限 1 连接（`deviceId`）；自动管理 tick（连接超时 30s / 空房 5min 回收 / 房主转移）；事件限流（emoticon 5/s、skin 2/s、mouse 20/s）。
