@@ -111,6 +111,74 @@ npm test         # node --test (19 cases)
 
 Build and launch `Floatee`; right-click the tray icon to explore menus.
 
+## 🎮 Usage
+
+### Basic Interaction
+
+| Action | How | Description |
+|--------|-----|-------------|
+| **Eye follow** | Move cursor near the Tee | Eyes track your cursor; the closer, the gentler the movement |
+| **Drag Tee** | Left-click + drag | Tee walks while dragging (animated walk cycle) |
+| **Zoom** | Mouse wheel over Tee | Scroll up to zoom in, down to zoom out (50%–200%) |
+| **Tee petting** | Hover cursor over Tee | Triggers a ❤️ hearts emoticon above the Tee |
+
+### Emoticon Wheel
+
+- **Open**: Right-click the Tee
+- **Select emote**: Hover over the outer ring (16 emotes), left-click to confirm
+- **Select eyes**: Hover over the inner ring (6 eye styles: Normal, Happy, Angry, Pain, Surprise, Blink), left-click to confirm
+- **Close**: Click outside the wheel, or press `Esc`; the wheel animates in/out smoothly
+
+### Chat
+
+- **Open chat**: Press `Enter` (or use tray menu → Send Message)
+- **Send message**: Type text, press `Enter` again to send
+- **Cancel**: Press `Esc` to discard and close
+- **Auto-close**: Empty input box closes automatically after 5 seconds of inactivity
+- **IME support**: System input method (Chinese, Japanese, etc.) is fully supported
+
+### Auto Emoticons
+
+The Tee periodically shows random emoticons above its head — no action needed:
+
+- **Random trigger**: Every 10 seconds, a ~50% chance to display a random emoticon
+- **Drag trigger**: Starting to drag the Tee triggers an emoticon
+- **Settings trigger**: Switching eyes or zoom level triggers an emoticon
+- **Petting trigger**: Hovering cursor over the Tee triggers a ❤️ hearts emoticon (once per entry)
+- **Sleep mode**: Auto emoticons are paused while the Tee is sleeping
+
+### Multiplayer
+
+1. **Connect**: Tray → Online → Connect (enter `host:port`)
+2. **Create room**: Tray → Online → Create Room (set name, public/private, password)
+3. **Join room**: Tray → Online → Join Room (enter room ID) or double-click a public room in the room list
+4. **Show password**: Tray → Online → Show Password (displays room ID + password for sharing)
+5. **Leave room**: Tray → Online → Leave Room
+
+In a room, other players' Tees appear next to yours with synced eyes, skins, emotes, HSL colours and chat bubbles. You can drag/zoom other players' Tees locally.
+
+### Sleep & Break
+
+- **Auto sleep**: After 60 seconds of inactivity (configurable), the Tee falls asleep (zzz animation, eyes close)
+- **Wake up**: Any mouse/keyboard activity wakes the Tee
+- **Break reminder**: After 20 minutes of continuous use (configurable), a reminder bubble appears
+- **Usage tracking**: View cumulative usage time in the Sleep & Break menu or Settings → Sleep page
+
+### Settings Window
+
+Open via tray menu → Settings. Five pages:
+
+1. **General**: Theme toggle (follows system / light / dark), Always on Top, Color Adjust
+2. **Appearance**: Skin, eyes, zoom, feather strength, emoticon set
+3. **Network**: Server address, connect/disconnect, room info (create/join/leave/list)
+4. **Sleep**: Sleep timeout, break reminder interval, reset-after-sleep threshold
+5. **Instance**: Multi-instance management (launch new, custom profile, config folder)
+
+### Multi-screen
+
+If the Tee disappears after disconnecting a monitor:
+- Use tray menu → **Reset Position** to bring it back to the nearest visible screen
+
 ## 🖼 Screenshots
 
 <p align="center">
