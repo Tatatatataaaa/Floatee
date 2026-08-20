@@ -101,16 +101,29 @@ npm test         # node --test（19 个用例）
 
 ## 🖼 截图
 
-*请提供以下截图以完成本节：*
+<p align="center">
+  <img src="assets/readme/Desktop&Tee.png" width="45%" alt="桌面 & Tee" />
+  <img src="assets/readme/Desktop&Tees.png" width="45%" alt="桌面 & 多个 Tee（联机）" />
+</p>
 
-1. **主界面**：Tee + 表情圆盘打开（显示 16 个表情）
-2. **设置窗口 - 常规页**：主题切换（跟随系统/浅色/深色）+ 窗口设置
-3. **设置窗口 - 外观页**：皮肤选择、眼睛/缩放/羽化控件
-4. **设置窗口 - 联机页**：服务器连接、房间信息、房间操作按钮
-5. **设置窗口 - 休眠页**：使用时长显示 + 休眠设置
-6. **多人模式**：多个 Tee 在同一房间（同步眼睛/皮肤/聊天）
-7. **深色主题**：设置窗口深色模式外观
-8. **多屏幕重置**：Reset Position 功能（跨屏幕演示）
+<p align="center">
+  <img src="assets/readme/emotion.png" width="30%" alt="表情圆盘" />
+  <img src="assets/readme/Online.png" width="30%" alt="联机页面" />
+  <img src="assets/readme/OnlineEmotion.png" width="30%" alt="联机 + 表情" />
+</p>
+
+<p align="center">
+  <img src="assets/readme/SettingNormal.png" width="45%" alt="设置 - 常规页" />
+  <img src="assets/readme/SettingAppearance.png" width="45%" alt="设置 - 外观页" />
+</p>
+
+1. **主界面**：Tee 浮动在桌面上，眼睛跟随光标移动
+2. **多人模式**：多个 Tee 在同一房间（同步眼睛/皮肤/聊天）
+3. **表情圆盘**：16 个表情 + 6 种眼睛，带弹出动画
+4. **联机页面**：服务器连接、房间信息、房间操作按钮
+5. **联机 + 表情**：多人模式下的表情圆盘
+6. **设置 - 常规页**：主题切换、窗口设置
+7. **设置 - 外观页**：皮肤选择、眼睛/缩放/羽化控件
 
 ## 🏛 致谢
 

@@ -113,16 +113,29 @@ Build and launch `Floatee`; right-click the tray icon to explore menus.
 
 ## 🖼 Screenshots
 
-*Please provide the following screenshots to complete this section:*
+<p align="center">
+  <img src="assets/readme/Desktop&Tee.png" width="45%" alt="Desktop & Tee" />
+  <img src="assets/readme/Desktop&Tees.png" width="45%" alt="Desktop & Tees (Multiplayer)" />
+</p>
 
-1. **Main Interface**: Tee with emoticon wheel open (showing 16 emotes)
-2. **Settings Window**: General page with theme toggle and window settings
-3. **Appearance Page**: Skin selection, eye/size/feather controls
+<p align="center">
+  <img src="assets/readme/emotion.png" width="30%" alt="Emoticon Wheel" />
+  <img src="assets/readme/Online.png" width="30%" alt="Online Page" />
+  <img src="assets/readme/OnlineEmotion.png" width="30%" alt="Online with Emoticon" />
+</p>
+
+<p align="center">
+  <img src="assets/readme/SettingNormal.png" width="45%" alt="Settings - General Page" />
+  <img src="assets/readme/SettingAppearance.png" width="45%" alt="Settings - Appearance Page" />
+</p>
+
+1. **Main Interface**: Tee floating on desktop with cursor-driven eye follow
+2. **Multiplayer**: Multiple Tees in a room (synced eyes, skins, chat)
+3. **Emoticon Wheel**: 16 emotes + 6 eyes with pop-in animations
 4. **Network Page**: Server connection, room info, and room operations
-5. **Sleep Page**: Usage time display and sleep settings
-6. **Multiplayer**: Multiple Tees in a room (synced eyes, skins, chat)
-7. **Dark Theme**: Settings window in dark mode
-8. **Multi-screen**: Reset Position feature across multiple monitors
+5. **Online with Emoticon**: Emoticon wheel in multiplayer mode
+6. **Settings - General**: Theme toggle, window settings
+7. **Settings - Appearance**: Skin selection, eye/size/feather controls
 
 ## 🏛 Credits
 
