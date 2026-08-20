@@ -9,9 +9,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const DEFAULTS = {
   server: {
     host: '0.0.0.0',
-    wsPort: 8765,
-    tcpPort: 8764,
-    adminPort: 8766,
+    wsPort: 9002,
+    tcpPort: 9000,
+    adminPort: 9001,
     maxConnections: 1000,
   },
   room: {
