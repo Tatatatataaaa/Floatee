@@ -230,6 +230,24 @@ This project is a personalised desktop pet and is **not** an official product
 of DDNet or QMClient. Skin artwork belongs to its respective authors; please
 respect each skin's license (e.g. CC BY-SA on DDNet's skin database).
 
+### AI Vibe Coding
+
+This project was developed with the assistance of **AI Vibe Coding** — a workflow
+where an AI agent (GitHub Copilot powered by MiMo) collaborates with the developer
+in real time within the IDE. The AI agent handles code generation, bug diagnosis,
+multi-step refactoring, build verification, and documentation, while the developer
+drives design decisions and provides visual feedback.
+
+Key aspects of this workflow:
+- **Iterative refinement**: features are built, tested, and refined through a tight
+  feedback loop between the developer and the AI agent
+- **Cross-platform debugging**: the AI agent diagnoses platform-specific issues
+  (Windows/macOS/Linux) using runtime logs, crash reports, and pixel analysis
+- **Architectural guidance**: the AI agent reads reference projects (e.g. ElaWidgetTools)
+  and proposes implementation plans before coding begins
+- **Human oversight**: all changes are reviewed and approved by the developer before
+  committing
+
 ---
 
 *中文文档见 [README_zh.md](README_zh.md)。*
